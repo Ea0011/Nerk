@@ -1,5 +1,6 @@
 from email.mime import image
 from turtle import forward
+from networks.losses import PerceptualLossVgg
 from networks.utils import construct_unet
 import torch
 from torch import nn
@@ -98,13 +99,15 @@ class SketchColoringModule(pl.LightningModule):
   train_gan: boolean
   g: int
   rec: int
+  perc: int
   colorizer_lr: float
   discriminator_lr: float
   b1: float
   b2: float
   weight_decay: float
+  device: torch.device
   '''
-  def __init__(self, **hparams):
+  def __init__(self, device, **hparams):
     super(SketchColoringModule, self).__init__()
 
     # save network hyperparameters to checkpoints
@@ -119,6 +122,7 @@ class SketchColoringModule(pl.LightningModule):
     # Initialiaze colored sketch generator
     self.reconstruction_loss = nn.SmoothL1Loss()
     self.adversarial_loss = nn.BCELoss()
+    self.perceptual_loss = PerceptualLossVgg(device=device, layer=35) # 35 for conv5_3 layer in VGG19
     
     # initialize a variable to hold generated images
     self.generated_imgs = None
@@ -154,9 +158,10 @@ class SketchColoringModule(pl.LightningModule):
         g_loss = self.adversarial_loss(self.Discriminator(self.generated_imgs), valid)
 
       rec_loss = self.reconstruction_loss(self.generated_imgs, images)
+      perc_loss = self.perceptual_loss(self.generated_imgs, images)
 
       tqdm_dict = {"g_loss": g_loss, 'rec_loss': rec_loss}
-      total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss
+      total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss
       output = OrderedDict({"loss": total_loss, "progress_bar": tqdm_dict, "log": tqdm_dict})
 
       return output
