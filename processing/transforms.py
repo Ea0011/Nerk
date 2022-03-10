@@ -18,9 +18,9 @@ An XDog filter with random Gaussian standard deviation
 class RandomSketch():
   def __init__(self, params = PARAM_DEFAULT):
     self.params = params
-    self.params[-2] = np.random.uniform(0.5, 2.5)
   
   def __call__(self, image):
+    self.params[-2] = np.random.uniform(0.5, 1.6)
     sketch = xdog(image, *self.params)
 
     return sketch

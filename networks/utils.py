@@ -7,7 +7,9 @@ params: [{'in_c', 'out_c'}]
 '''
 def construct_unet(params):
   enc_layers = []
+  bottle_neck_layers = []
   dec_layers = []
+  output_layers = []
 
   if "decoder_blocks" not in params:
     for enc_dims in params["encoder_blocks"]:
@@ -15,11 +17,12 @@ def construct_unet(params):
       enc_layers.append(encoder)
     
     bottle_neck = ConvBlock(params["encoder_blocks"][-1]['out_c'], params["encoder_blocks"][-1]['out_c'])
-    enc_layers.append(bottle_neck)
+    bottle_neck_layers.append(bottle_neck)
 
     encoder = nn.ModuleList(enc_layers)
+    bottle_neck = nn.ModuleList(bottle_neck_layers)
 
-    return encoder
+    return encoder, bottle_neck
 
   encoder_blocks, decoder_blocks = params["encoder_blocks"], params["decoder_blocks"]
   for enc_dims, dec_dims in zip(encoder_blocks, decoder_blocks):
@@ -29,15 +32,17 @@ def construct_unet(params):
     dec_layers.append(decoder)
 
   bottle_neck = ConvBlock(encoder_blocks[-1]['out_c'], encoder_blocks[-1]['out_c'])
-  enc_layers.append(bottle_neck)
+  bottle_neck_layers.append(bottle_neck)
 
   output = nn.Conv2d(decoder_blocks[-1]['out_c'], 3, kernel_size=1)
   act = nn.Sigmoid()
 
-  dec_layers.append(output)
-  dec_layers.append(act)
+  output_layers.append(output)
+  output_layers.append(act)
 
   encoder = nn.ModuleList(enc_layers)
   decoder = nn.ModuleList(dec_layers)
+  bottle_neck = nn.ModuleList(bottle_neck_layers)
+  output = nn.ModuleList(output_layers)
 
-  return encoder, decoder
+  return encoder, bottle_neck, decoder, output

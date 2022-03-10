@@ -36,7 +36,7 @@ class UNetDecoderBlock(nn.Module):
   def __init__(self, in_c, out_c):
     super().__init__()
     self.up = nn.ConvTranspose2d(in_c, out_c, kernel_size=2, stride=2, padding=0)
-    self.conv = ConvBlock(out_c + out_c, out_c)
+    self.conv = ConvBlock(2 * out_c, out_c)
 
   def forward(self, inputs, skip):
     x = self.up(inputs)

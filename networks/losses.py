@@ -16,25 +16,24 @@ class PerceptualLossVgg(nn.Module):
     self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
 
-    for param in self.vgg.parameters():
-      param.requires_grad = False
-
     for i, _ in enumerate(self.vgg):
       if i == self.layer:
         self.fhooks.append(self.vgg[i].register_forward_hook(self._extract_feature_forward_hook(i)))
 
+    # truncate model to the used layer
+    self.vgg = self.vgg[0:layer+1]
+
   def forward(self, input, target):
-    with torch.no_grad():
-      input, target = self.normalize(input), self.normalize(target)
-      self.vgg(input)
-      input_feat_map = self.layer_out[self.layer]
-      self.vgg(target)
-      target_feat_map = self.layer_out[self.layer]
+    input, target = self.normalize(input), self.normalize(target)
+    self.vgg(input)
+    input_feat_map = self.layer_out[self.layer]
+    self.vgg(target)
+    target_feat_map = self.layer_out[self.layer]
 
-      gramm_matrix_input = self.gram_matrix(input_feat_map)
-      gramm_matrix_target = self.gram_matrix(target_feat_map)
+    gramm_matrix_input = self.gram_matrix(input_feat_map)
+    gramm_matrix_target = self.gram_matrix(target_feat_map)
 
-      return F.mse_loss(gramm_matrix_input, gramm_matrix_target)
+    return F.mse_loss(gramm_matrix_input, gramm_matrix_target)
 
 
   def _extract_feature_forward_hook(self, layer_name):

@@ -13,11 +13,14 @@ class StyleEncoder(nn.Module):
   def __init__(self, style_encoder_params):
     super().__init__()
     self.style_encoder_params = style_encoder_params
-    self.style_encoder = construct_unet(self.style_encoder_params)
+    self.style_encoder, self.style_bottleneck = construct_unet(self.style_encoder_params)
 
   def forward(self, input):
     for _, layer in enumerate(self.style_encoder):
       _, input = layer(input)
+
+    for _, layer in enumerate(self.style_bottleneck):
+      input = layer(input)
 
     return input
 
@@ -26,8 +29,9 @@ class DiscriminatorModule(nn.Module):
   def __init__(self, discriminator_params):
     super().__init__()
     self.discriminator_params = discriminator_params
-    self.discriminator = construct_unet(self.discriminator_params)
+    self.discriminator, self.discriminator_bottleneck = construct_unet(self.discriminator_params)
     self.classifier = nn.Sequential(
+      nn.Flatten(),
       nn.Linear(discriminator_params['encoder_params'][-1], 1),
       nn.Sigmoid(),
     )
@@ -36,17 +40,21 @@ class DiscriminatorModule(nn.Module):
     for _, layer in enumerate(self.discriminator):
       _, input = layer(input)
 
+    for _, layer in enumerate(self.discriminator_bottleneck):
+      input = layer(input)
+
     validity = self.classifier(input)
 
     return validity
 
+# TODO: make texture transfer perform multiple attention + convolution operations
 class TextureTransfer(nn.Module):
   def __init__(self, attn_heads, in_dim=256) -> None:
     super().__init__()
     self.attention = nn.MultiheadAttention(embed_dim=in_dim, num_heads=attn_heads, batch_first=True)
 
   def forward(self, sketch, exemplar):
-    attn_out, _ = self.attention(sketch, exemplar, exemplar) # B * 32 * 256
+    attn_out, _ = self.attention(sketch, exemplar, exemplar)
     texture_transfer = torch.cat((sketch, attn_out), dim=2)
 
     return texture_transfer
@@ -56,25 +64,37 @@ class SketchColorizer(nn.Module):
   def __init__(self, colorizer_params, style_params):
     super().__init__()
     self.colorizer_params = colorizer_params
-    self.colorizer_encoder, self.colorizer_decoder = construct_unet(colorizer_params)
-    self.style_encoder = construct_unet(style_params)
-    self.texture_transfer = TextureTransfer(8) # TODO: parametrize
-
-    self.skip = []
+    self.colorizer_encoder, self.colorizer_bottleneck, self.colorizer_decoder, self.colorizer_output = construct_unet(colorizer_params)
+    self.style_encoder, self.style_bottleneck = construct_unet(style_params)
+    self.texture_transfer = TextureTransfer(8, self.colorizer_params['encoder_blocks'][-1]['out_c']) # TODO: parametrize
 
   def forward(self, sketch, exemplars):
+    skip = []
+
     for i, layer in enumerate(self.colorizer_encoder):
       s, sketch = layer(sketch)
-      self.skip[i] = s
+      skip.append(s)
+
+    for i, layer in enumerate(self.colorizer_bottleneck):
+      sketch = layer(sketch)
 
     for i, layer in enumerate(self.style_encoder):
       _, exemplars = layer(exemplars)
 
+    for i, layer in enumerate(self.style_bottleneck):
+      exemplars = layer(exemplars)
+
+    # B x C x H x W -> B x H*W x C
     # Compute attention to transfer texture from exemplar to sketch
-    transfer = self.texture_transfer(sketch, exemplars)
+    b, c, h, w = sketch.shape
+    transfer = self.texture_transfer(sketch.view((b, h*w, c)), exemplars.view((b, h*w, c)))
+    sketch = transfer.view((b, c*2, h, w))
 
     for i, layer in enumerate(self.colorizer_decoder):
-      sketch = self.colorizer_decoder(transfer, self.skip[-i])
+      sketch = layer(sketch, skip[-(i + 1)])
+
+    for i, layer in enumerate(self.colorizer_output):
+      sketch = layer(sketch)
 
     return sketch
 
@@ -112,6 +132,12 @@ class SketchColoringModule(pl.LightningModule):
 
     # save network hyperparameters to checkpoints
     self.save_hyperparameters()
+
+    # Used to log compute graph to tensorboard
+    self.example_input_array = [
+      torch.zeros((1, 1, 512, 512), dtype=torch.float),
+      torch.zeros((1, 3, 512, 512), dtype=torch.float),
+    ]
 
     # initialize generator and dsicriminator
     self.Generator = SketchColorizer(self.hparams.colorizer_params, self.hparams.style_params)
@@ -162,7 +188,14 @@ class SketchColoringModule(pl.LightningModule):
 
       tqdm_dict = {"g_loss": g_loss, 'rec_loss': rec_loss}
       total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss
-      output = OrderedDict({"loss": total_loss, "progress_bar": tqdm_dict, "log": tqdm_dict})
+      output = OrderedDict({
+        "loss": total_loss,
+        "perceptual_loss": perc_loss,
+        "reconstruction_loss": rec_loss,
+        "progress_bar": tqdm_dict, 
+        "log": tqdm_dict,
+      })
+      self.log('train_loss', total_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
       return output
 
@@ -192,8 +225,8 @@ class SketchColoringModule(pl.LightningModule):
       return output
 
   def validation_step(self, batch, batch_idx):
-    sketches, images = batch
-    generated_images = self(sketches)
+    images, sketches, exemplars = self._exemplars_from_batch(batch)
+    generated_images = self(sketches, exemplars)
 
     valid = torch.ones(sketches.size(0), 1)
     valid = valid.type_as(sketches)
@@ -203,8 +236,11 @@ class SketchColoringModule(pl.LightningModule):
       g_loss = self.adversarial_loss(self.Discriminator(generated_images), valid)
 
     rec_loss = self.reconstruction_loss(generated_images, images)
+    perc_loss = self.perceptual_loss(self.generated_imgs, images)
+    total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss
 
-    total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss
+    self.log('val_loss', total_loss, prog_bar=True)
+
     return total_loss
 
   def configure_optimizers(self):
@@ -217,7 +253,7 @@ class SketchColoringModule(pl.LightningModule):
       betas=(b1, b2),
       weight_decay=self.hparams.weight_decay,)
 
-    if self.hparams.train_gain:
+    if self.hparams.train_gan:
       discriminator_lr = self.hparams.discriminator_lr
       opt_d = torch.optim.AdamW(self.Discriminator.parameters(), lr=discriminator_lr, betas=(b1, b2), weight_decay=self.hparams.weight_decay)
 

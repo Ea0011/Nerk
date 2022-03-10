@@ -1,6 +1,7 @@
 import numpy as np
 import os
 from PIL import Image
+from processing.XDoG import PARAM_DEFAULT
 
 from processing.transforms import InputTransform, RandomSketch, Sketch
 
@@ -10,6 +11,7 @@ class ImageFolderDataset():
               mode='train',
               ratios=[.8, .1, .1], # train/val/test ratios for data split
               transform=None,
+              sketch_params=PARAM_DEFAULT,
               *args,
               **kwargs):
 
@@ -18,8 +20,8 @@ class ImageFolderDataset():
     )
 
     # For deterministic sampling
-    np.random.seed(42)
-    np.random.shuffle(self.images)
+    r = np.random.RandomState(1234)
+    r.shuffle(self.images)
 
     train, val, test = np.split(self.images, 
       [int(ratios[0] * len(self.images)),
@@ -35,7 +37,7 @@ class ImageFolderDataset():
 
     # transform function that we will apply later for data preprocessing
     self.transform = transform
-    self.sketch_transform = RandomSketch()
+    self.sketch_transform = RandomSketch(sketch_params)
 
   @staticmethod
   def make_dataset(directory):

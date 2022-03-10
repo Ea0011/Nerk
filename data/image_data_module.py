@@ -17,15 +17,13 @@ class ImageDataModule(pl.LightningDataModule):
     self.split_ratios = split_ratios
 
   def prepare_data(self):
-    train, val, test = \
+    self.train_set, self.val_set, self.test_set = \
       ImageFolderDataset(path=self.data_dir, mode='train', ratios=self.split_ratios), \
       ImageFolderDataset(path=self.data_dir, mode='val', ratios=self.split_ratios), \
       ImageFolderDataset(path=self.data_dir, mode='test', ratios=self.split_ratios)
 
-    return train,val,test
-
   def setup(self, stage = None):
-    self.train_set, self.val_set, self.test_set = self.prepare_data()
+    self.prepare_data()
 
   def train_dataloader(self):
     return DataLoader(
