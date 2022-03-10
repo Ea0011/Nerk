@@ -236,7 +236,7 @@ class SketchColoringModule(pl.LightningModule):
       g_loss = self.adversarial_loss(self.Discriminator(generated_images), valid)
 
     rec_loss = self.reconstruction_loss(generated_images, images)
-    perc_loss = self.perceptual_loss(self.generated_imgs, images)
+    perc_loss = self.perceptual_loss(generated_images, images)
     total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss
 
     self.log('val_loss', total_loss, prog_bar=True)
