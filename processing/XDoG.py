@@ -23,7 +23,7 @@ def xdog(im, gamma=0.98, phi=200, eps=-0.1, k=1.6, sigma=0.8, binarize=False):
   imdiff -= imdiff.min()
   imdiff /= imdiff.max()
   if binarize:
-    th = threshold_otsu(imdiff)
+    th = threshold_otsu(imdiff.permute(1, 2, 0))
     imdiff = imdiff >= th
 
   return imdiff

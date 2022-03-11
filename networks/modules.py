@@ -1,5 +1,3 @@
-from email.mime import image
-from turtle import forward
 from networks.losses import PerceptualLossVgg
 from networks.utils import construct_unet
 import torch
@@ -8,22 +6,7 @@ from torch.nn import functional as F
 import pytorch_lightning as pl
 import torchvision
 from collections import OrderedDict
-
-class StyleEncoder(nn.Module):
-  def __init__(self, style_encoder_params):
-    super().__init__()
-    self.style_encoder_params = style_encoder_params
-    self.style_encoder, self.style_bottleneck = construct_unet(self.style_encoder_params)
-
-  def forward(self, input):
-    for _, layer in enumerate(self.style_encoder):
-      _, input = layer(input)
-
-    for _, layer in enumerate(self.style_bottleneck):
-      input = layer(input)
-
-    return input
-
+from kornia.geometry.transform import get_tps_transform, warp_image_tps
 
 class DiscriminatorModule(nn.Module):
   def __init__(self, discriminator_params):
@@ -32,7 +15,7 @@ class DiscriminatorModule(nn.Module):
     self.discriminator, self.discriminator_bottleneck = construct_unet(self.discriminator_params)
     self.classifier = nn.Sequential(
       nn.Flatten(),
-      nn.Linear(discriminator_params['encoder_params'][-1], 1),
+      nn.Linear(discriminator_params['encoder_blocks'][-1]['out_c'], 1),
       nn.Sigmoid(),
     )
   
@@ -126,6 +109,7 @@ class SketchColoringModule(pl.LightningModule):
   b2: float
   weight_decay: float
   device: torch.device
+  perceptual_layer: int, layer number of VGG network
   '''
   def __init__(self, device, **hparams):
     super(SketchColoringModule, self).__init__()
@@ -146,9 +130,9 @@ class SketchColoringModule(pl.LightningModule):
       self.Discriminator = DiscriminatorModule(self.hparams.discriminator_params)
 
     # Initialiaze colored sketch generator
-    self.reconstruction_loss = nn.SmoothL1Loss()
+    self.reconstruction_loss = nn.SmoothL1Loss(beta=0.1)
     self.adversarial_loss = nn.BCELoss()
-    self.perceptual_loss = PerceptualLossVgg(device=device, layer=35) # 35 for conv5_3 layer in VGG19
+    self.perceptual_loss = PerceptualLossVgg(device=device, layer=self.hparams.perceptual_layer)
     
     # initialize a variable to hold generated images
     self.generated_imgs = None
@@ -171,7 +155,7 @@ class SketchColoringModule(pl.LightningModule):
       # log sampled images
       sample_imgs = self.generated_imgs[:6]
       grid = torchvision.utils.make_grid(sample_imgs)
-      self.logger.experiment.add_image("generated_images", grid, 0)
+      self.logger.experiment.add_image("generated_images", grid, self.current_epoch)
 
       g_loss = 0
       if self.hparams.train_gan:
@@ -216,7 +200,7 @@ class SketchColoringModule(pl.LightningModule):
       fake = torch.zeros(images.size(0), 1)
       fake = fake.type_as(images)
 
-      fake_loss = self.adversarial_loss(self.Discriminator(self(sketches).detach()), fake)
+      fake_loss = self.adversarial_loss(self.Discriminator(self(sketches, exemplars).detach()), fake)
 
       # discriminator loss is the average of these
       d_loss = (real_loss + fake_loss) / 2
@@ -228,11 +212,10 @@ class SketchColoringModule(pl.LightningModule):
     images, sketches, exemplars = self._exemplars_from_batch(batch)
     generated_images = self(sketches, exemplars)
 
-    valid = torch.ones(sketches.size(0), 1)
-    valid = valid.type_as(sketches)
-
     g_loss = 0
     if self.hparams.train_gan:
+      valid = torch.ones(sketches.size(0), 1)
+      valid = valid.type_as(sketches)
       g_loss = self.adversarial_loss(self.Discriminator(generated_images), valid)
 
     rec_loss = self.reconstruction_loss(generated_images, images)
@@ -271,6 +254,11 @@ class SketchColoringModule(pl.LightningModule):
 
     return (images, sketches, exemplars)
 
-  def _exemplars_from_transformations(self, images, transform):
-    exemplars = transform(images)
+  def _exemplars_from_transformations(self, images):
+    points_src = torch.rand(images.shape[0], 5, 2)
+    points_dst = torch.rand(images.shape[0], 5, 2)
+    # note that we are getting the reverse transform: dst -> src
+    kernel_weights, affine_weights = get_tps_transform(points_dst, points_src)
+    exemplars = warp_image_tps(images, points_src, kernel_weights, affine_weights)
+
     return exemplars
