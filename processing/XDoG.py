@@ -11,7 +11,6 @@ import torch
 import torchvision.transforms as T
 
 def xdog(im, gamma=0.98, phi=200, eps=-0.1, k=1.6, sigma=0.8, binarize=False):
-  print(gamma, phi, eps, k, sigma)
   # Source : https://github.com/CemalUnal/XDoG-Filter
   # Reference : XDoG: An eXtended difference-of-Gaussians compendium including advanced image stylization
   # Link : http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.365.151&rep=rep1&type=pdf
