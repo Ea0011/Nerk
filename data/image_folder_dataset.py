@@ -12,9 +12,11 @@ class ImageFolderDataset():
               ratios=[.8, .1, .1], # train/val/test ratios for data split
               transform=None,
               sketch_params=PARAM_DEFAULT,
+              image_size=512,
               *args,
               **kwargs):
 
+    self.image_size = image_size
     self.images = self.make_dataset(
       directory=path,
     )
@@ -67,7 +69,7 @@ class ImageFolderDataset():
     return Image.open(image_path)
 
   def __getitem__(self, index):
-    image = InputTransform(size=512)(self.load_image(self.images[index]))
+    image = InputTransform(size=self.image_size)(self.load_image(self.images[index]))
     sketch = self.sketch_transform(image)
 
     # Not sure what kind of transform can be applied to target

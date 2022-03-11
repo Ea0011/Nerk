@@ -30,10 +30,7 @@ class PerceptualLossVgg(nn.Module):
     self.vgg(target)
     target_feat_map = self.layer_out[self.layer]
 
-    gramm_matrix_input = self.gram_matrix(input_feat_map)
-    gramm_matrix_target = self.gram_matrix(target_feat_map)
-
-    return F.mse_loss(gramm_matrix_input, gramm_matrix_target)
+    return F.l1_loss(input_feat_map, target_feat_map)
 
 
   def _extract_feature_forward_hook(self, layer_name):
@@ -41,17 +38,3 @@ class PerceptualLossVgg(nn.Module):
       self.layer_out[layer_name] = output
 
     return hook
-
-  @staticmethod
-  def gram_matrix(input):
-    # a=batch size(=1)
-    # b=number of feature maps
-    # (c,d)=dimensions of a feature map (N=c*d)
-    a, b, c, d = input.size()  
-    features = input.view(a * b, c * d)  # resise F_XL into \hat F_XL
-
-    G = torch.mm(features, features.t())  # compute the gram product
-
-    # we 'normalize' the values of the gram matrix
-    # by dividing by the number of element in each feature maps.
-    return G.div(a * b * c * d)
