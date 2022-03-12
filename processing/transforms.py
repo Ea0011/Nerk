@@ -1,8 +1,8 @@
 from processing.XDoG import xdog, PARAM_DEFAULT
 import numpy as np
-from torchvision import transforms, utils
+from torchvision import transforms
 import torch
-
+from kornia.color import lab_to_rgb
 class Sketch():
   def __init__(self, params = PARAM_DEFAULT):
     self.params = params
@@ -30,9 +30,19 @@ class InputTransform():
     self.transform = transforms.Compose([
       transforms.Resize(size),
       transforms.PILToTensor(),
-      transforms.ConvertImageDtype(torch.float)
+      transforms.ConvertImageDtype(torch.float),
     ])
   
   def __call__(self, image):
     return self.transform(image)
-    
+
+class OutputTransform():
+  def __init__(self) -> None:
+    self.transform = lab_to_rgb
+
+  def __call__(self, image_lab):
+    # Denormalize input to transform to back to rgb data
+    image_lab[:,0] = (image_lab[:,0] + 1) * 50
+    image_lab[:,1:] = image_lab[:,1:] * 127
+
+    return self.transform(image_lab, clip=True)

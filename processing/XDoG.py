@@ -1,13 +1,6 @@
-import argparse
 import numpy as np
-from pathlib import Path
-from scipy.ndimage import gaussian_filter
-import sys
 import numpy as np
-from skimage.color import rgb2gray
-from scipy.ndimage.filters import gaussian_filter
 from skimage.filters import threshold_otsu
-import torch
 import torchvision.transforms as T
 
 def xdog(im, gamma=0.98, phi=200, eps=-0.1, k=1.6, sigma=0.8, binarize=False):

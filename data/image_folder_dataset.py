@@ -2,7 +2,7 @@ import numpy as np
 import os
 from PIL import Image
 from processing.XDoG import PARAM_DEFAULT
-
+from kornia.color import RgbToLab
 from processing.transforms import InputTransform, RandomSketch, Sketch
 
 class ImageFolderDataset():
@@ -20,6 +20,7 @@ class ImageFolderDataset():
     self.images = self.make_dataset(
       directory=path,
     )
+    self.rgb_to_lab = RgbToLab()
 
     # For deterministic sampling
     r = np.random.RandomState(1234)
@@ -69,9 +70,14 @@ class ImageFolderDataset():
     return Image.open(image_path)
 
   def __getitem__(self, index):
-    image = InputTransform(size=self.image_size)(self.load_image(self.images[index]))
-    sketch = self.sketch_transform(image)
+    image = InputTransform(size=self.image_size)(self.load_image(self.images[index])) # For perceptual loss
+    sketch = self.sketch_transform(image) # For condditional GAN
+    img_lab = self.rgb_to_lab(image) # For chrominance loss
+
+    # normalize input to model
+    img_lab[0,] = 2*(img_lab[0,] / 100) - 1
+    img_lab[1:,] = img_lab[1:,] / 127
 
     # Not sure what kind of transform can be applied to target
     # image_transformed = self.transform(image)
-    return image,sketch
+    return image,sketch,img_lab

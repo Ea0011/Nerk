@@ -1,5 +1,6 @@
 from networks.losses import PerceptualLossVgg
 from networks.utils import construct_unet
+from processing.transforms import OutputTransform
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -119,8 +120,8 @@ class SketchColoringModule(pl.LightningModule):
 
     # Used to log compute graph to tensorboard
     self.example_input_array = [
-      torch.zeros((1, 1, 512, 512), dtype=torch.float),
-      torch.zeros((1, 3, 512, 512), dtype=torch.float),
+      torch.zeros((1, 1, 512, 512), dtype=torch.float), # sktech
+      torch.zeros((1, 2, 512, 512), dtype=torch.float), # exemplar
     ]
 
     # initialize generator and dsicriminator
@@ -133,6 +134,7 @@ class SketchColoringModule(pl.LightningModule):
     self.reconstruction_loss = nn.SmoothL1Loss(beta=0.1)
     self.adversarial_loss = nn.BCELoss()
     self.perceptual_loss = PerceptualLossVgg(device=device, layer=self.hparams.perceptual_layer)
+    self.lab_to_rgb = OutputTransform()
     
     # initialize a variable to hold generated images
     self.generated_imgs = None
@@ -145,7 +147,7 @@ class SketchColoringModule(pl.LightningModule):
     return colored
 
   def training_step(self, batch, batch_idx, optimizer_idx=0):
-    images, sketches, exemplars = self._exemplars_from_batch(batch)
+    images, sketches, exemplars, images_lab = self._exemplars_from_batch(batch)
 
     # train generator
     if optimizer_idx == 0:
@@ -154,6 +156,7 @@ class SketchColoringModule(pl.LightningModule):
 
       # log sampled images
       sample_imgs = self.generated_imgs[:6]
+      sample_imgs = self.lab_to_rgb(sample_imgs)
       grid = torchvision.utils.make_grid(sample_imgs)
       self.logger.experiment.add_image("generated_images", grid, self.current_epoch)
 
@@ -167,8 +170,11 @@ class SketchColoringModule(pl.LightningModule):
         # adversarial loss is binary cross-entropy
         g_loss = self.adversarial_loss(self.Discriminator(self.generated_imgs), valid)
 
-      rec_loss = self.reconstruction_loss(self.generated_imgs, images)
-      perc_loss = self.perceptual_loss(self.generated_imgs, images)
+      color_channels = self.generated_imgs[:, 1:]
+      rec_loss = self.reconstruction_loss(color_channels, images_lab[:, 1:])
+
+      rgb_images = self.lab_to_rgb(self.generated_imgs)
+      perc_loss = self.perceptual_loss(rgb_images, images)
 
       tqdm_dict = {"g_loss": g_loss, 'rec_loss': rec_loss}
       total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss
@@ -209,7 +215,7 @@ class SketchColoringModule(pl.LightningModule):
       return output
 
   def validation_step(self, batch, batch_idx):
-    images, sketches, exemplars = self._exemplars_from_batch(batch)
+    images, sketches, exemplars, images_lab = self._exemplars_from_batch(batch)
     generated_images = self(sketches, exemplars)
 
     g_loss = 0
@@ -218,8 +224,12 @@ class SketchColoringModule(pl.LightningModule):
       valid = valid.type_as(sketches)
       g_loss = self.adversarial_loss(self.Discriminator(generated_images), valid)
 
-    rec_loss = self.reconstruction_loss(generated_images, images)
-    perc_loss = self.perceptual_loss(generated_images, images)
+    color_channels = generated_images[:, 1:]
+    rec_loss = self.reconstruction_loss(color_channels, images_lab[:, 1:])
+
+    rgb_images = self.lab_to_rgb(generated_images)
+    perc_loss = self.perceptual_loss(rgb_images, images)
+
     total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss
 
     self.log('val_loss', total_loss, prog_bar=True)
@@ -246,13 +256,14 @@ class SketchColoringModule(pl.LightningModule):
   
   # An exemplar is an image from the same batch as the training sample
   def _exemplars_from_batch(self, batch):
-    images, sketches = batch
+    images, sketches, images_lab = batch
     images = torch.repeat_interleave(images, self.hparams.num_exemplars, dim=0)
+    images_lab = torch.repeat_interleave(images_lab, self.hparams.num_exemplars, dim=0)
     sketches = torch.repeat_interleave(sketches, self.hparams.num_exemplars, dim=0)
     perm = torch.randperm(images.shape[0])
-    exemplars = images[perm,]
+    exemplars = images_lab[perm, 1:] # retain only color information for exemplars
 
-    return (images, sketches, exemplars)
+    return (images, sketches, exemplars, images_lab)
 
   def _exemplars_from_transformations(self, images):
     points_src = torch.rand(images.shape[0], 5, 2)
