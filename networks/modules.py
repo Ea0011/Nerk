@@ -129,8 +129,8 @@ class SketchColoringModule(pl.LightningModule):
       self.Discriminator = DiscriminatorModule(self.hparams.discriminator_params)
 
     # Initialiaze colored sketch generator
-    self.color_loss = nn.SmoothL1Loss(beta=0.1)
-    self.reconstruction_loss = nn.SmoothL1Loss(beta=0.1)
+    self.color_loss = nn.SmoothL1Loss()
+    self.reconstruction_loss = nn.SmoothL1Loss()
     self.adversarial_loss = nn.BCELoss()
     self.perceptual_loss = PerceptualLossVgg(device=device, layer=self.hparams.perceptual_layer)
     self.lab_to_rgb = OutputTransform()
@@ -159,6 +159,12 @@ class SketchColoringModule(pl.LightningModule):
       grid = torchvision.utils.make_grid(sample_imgs)
       self.logger.experiment.add_image("generated_images", grid, self.current_epoch)
 
+      color_loss = self.color_loss(self.generated_imgs, images_lab)
+
+      rgb_images = self.lab_to_rgb(self.generated_imgs.clone())
+      perc_loss = self.perceptual_loss(rgb_images, images)
+      rec_loss = self.reconstruction_loss(rgb_images, images)
+
       g_loss = 0
       if self.hparams.train_gan:
         # ground truth result (ie: all fake)
@@ -167,17 +173,12 @@ class SketchColoringModule(pl.LightningModule):
         valid = valid.type_as(sketches)
 
         # adversarial loss is binary cross-entropy
-        g_loss = self.adversarial_loss(self.Discriminator(self.generated_imgs), valid)
-
-      color_loss = self.color_loss(self.generated_imgs, images_lab)
-
-      rgb_images = self.lab_to_rgb(self.generated_imgs.clone())
-      perc_loss = self.perceptual_loss(rgb_images, images)
-      rec_loss = self.reconstruction_loss(rgb_images, images)
+        g_loss = self.adversarial_loss(self.Discriminator(rgb_images), valid)
 
       tqdm_dict = {"g_loss": g_loss, 'rec_loss': rec_loss}
       total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss + \
         self.hparams.color * color_loss
+
       output = OrderedDict({
         "loss": total_loss,
         "perceptual_loss": perc_loss,
@@ -185,6 +186,7 @@ class SketchColoringModule(pl.LightningModule):
         "progress_bar": tqdm_dict, 
         "log": tqdm_dict,
       })
+
       self.log('train_loss', total_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
       return output
@@ -197,16 +199,18 @@ class SketchColoringModule(pl.LightningModule):
       # Measure discriminator's ability to classify real from generated samples
 
       # how well can it label as real?
-      valid = torch.ones(images.size(0), 0)
+      valid = torch.ones(images.size(0), 1)
       valid = valid.type_as(images)
-
+      
       real_loss = self.adversarial_loss(self.Discriminator(images), valid)
 
       # how well can it label as fake?
       fake = torch.zeros(images.size(0), 1)
       fake = fake.type_as(images)
 
-      fake_loss = self.adversarial_loss(self.Discriminator(self(sketches, exemplars).detach()), fake)
+      self.generated_imgs = self(sketches, exemplars).detach()
+      rgb_images = self.lab_to_rgb(self.generated_imgs)
+      fake_loss = self.adversarial_loss(self.Discriminator(rgb_images), fake)
 
       # discriminator loss is the average of these
       d_loss = (real_loss + fake_loss) / 2
