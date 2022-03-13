@@ -16,8 +16,9 @@ class DiscriminatorModule(nn.Module):
     self.discriminator_params = discriminator_params
     self.discriminator, self.discriminator_bottleneck = construct_unet(self.discriminator_params)
     self.classifier = nn.Sequential(
+      nn.AdaptiveAvgPool2d((32, 32)),
       nn.Flatten(),
-      nn.Linear(discriminator_params['encoder_blocks'][-1]['out_c'], 1),
+      nn.Linear(512, 1),
       nn.Sigmoid(),
     )
   
