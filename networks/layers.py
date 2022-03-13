@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 class ConvBlock(nn.Module):
   def __init__(self, in_c, out_c):
@@ -32,49 +33,58 @@ class UNetEncoderBlock(nn.Module):
 
     return x, p
 
+class VisualAttention(nn.Module):
+  """ Self attention Layer"""
+  def __init__(self, in_dim, attn_dim):
+    super(VisualAttention, self).__init__()
+    self.chanel_in = in_dim
+    self.attn_dim = attn_dim
+    
+    self.query_conv = nn.Conv2d(in_channels = in_dim, out_channels = in_dim // self.attn_dim, kernel_size=1)
+    self.key_conv = nn.Conv2d(in_channels = in_dim, out_channels = in_dim // self.attn_dim, kernel_size=1)
+    self.value_conv = nn.Conv2d(in_channels = in_dim, out_channels = in_dim, kernel_size=1)
+    self.gamma = nn.Parameter(torch.zeros(1))
+
+    self.softmax = nn.Softmax(dim=-1)
+
+  def forward(self, sketches, exemplars):
+    """
+    inputs :
+      x : input feature maps( B X C X W X H)
+    returns :
+      out : self attention value + input feature 
+      attention: B X N X N (N is Width*Height)
+    """
+    m_batchsize, C, width, height = sketches.size()
+    proj_query = self.query_conv(sketches).view(m_batchsize, -1, width * height).permute(0, 2, 1) # B X CX(N)
+    proj_key = self.key_conv(exemplars).view(m_batchsize, -1, width * height) # B X C x (*W*H)
+    energy = torch.bmm(proj_query, proj_key) # transpose check
+    attention = self.softmax(energy) # BX (N) X (N) 
+    proj_value = self.value_conv(exemplars).view(m_batchsize, -1, width * height) # B X C X N
+
+    out = torch.bmm(proj_value, attention.permute(0, 2, 1))
+    out = out.view(m_batchsize, C, width, height)
+
+    texture = out.clone()
+    
+    out = self.gamma * out + sketches
+    return out, texture, attention
+
 class UNetDecoderBlock(nn.Module):
   def __init__(self, in_c, out_c):
     super().__init__()
     self.up = nn.ConvTranspose2d(in_c, out_c, kernel_size=2, stride=2, padding=0)
+    self.interpolate = nn.Upsample(scale_factor=2, mode="bilinear")
     self.conv = ConvBlock(2 * out_c, out_c)
+    self.conv_1 = nn.Conv2d(in_c, out_c, kernel_size=1)
 
-  def forward(self, inputs, skip):
+  def forward(self, inputs, skip, texture):
     x = self.up(inputs)
+
+    texture = self.interpolate(texture)
+    texture = self.conv_1(texture)
+    x = x + texture
+
     x = torch.cat([x, skip], axis=1)
     x = self.conv(x)
-    return x
-
-class UNet(nn.Module):
-  def __init__(self):
-    super().__init__()
-    """ Encoder """
-    self.e1 = UNetEncoderBlock(3, 32)
-    self.e2 = UNetEncoderBlock(32, 64)
-    self.e3 = UNetEncoderBlock(64, 128)
-    self.e4 = UNetEncoderBlock(128, 256)        
-    """ Bottleneck """
-    self.b = ConvBlock(256, 256)         
-    """ Decoder """
-    self.d1 = UNetDecoderBlock(512, 256)
-    self.d2 = UNetDecoderBlock(256, 128)
-    self.d3 = UNetDecoderBlock(128, 64)
-    self.d4 = UNetDecoderBlock(64, 32)         
-    """ Classifier """
-    self.outputs = nn.Conv2d(32, 3, kernel_size=1, padding=0)     
-
-  def forward(self, inputs):
-    """ Encoder """
-    s1, p1 = self.e1(inputs)
-    s2, p2 = self.e2(p1)
-    s3, p3 = self.e3(p2)
-    s4, p4 = self.e4(p3)
-    """ Bottleneck """
-    b = self.b(p4)         
-    """ Decoder """
-    d1 = self.d1(b, s4)
-    d2 = self.d2(d1, s3)
-    d3 = self.d3(d2, s2)
-    d4 = self.d4(d3, s1)         
-    """ Painter """
-    outputs = self.outputs(d4)        
-    return outputs
+    return x, texture

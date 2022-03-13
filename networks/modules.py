@@ -1,3 +1,4 @@
+from networks.layers import VisualAttention
 from networks.losses import PerceptualLossVgg
 from networks.utils import construct_unet
 from processing.transforms import OutputTransform
@@ -32,22 +33,16 @@ class DiscriminatorModule(nn.Module):
     return validity
 
 class TextureTransfer(nn.Module):
-  def __init__(self, attn_heads, in_dim=512) -> None:
+  def __init__(self, attn_dim, in_dim=512) -> None:
     super().__init__()
-    self.attention = nn.MultiheadAttention(embed_dim=in_dim, num_heads=attn_heads, batch_first=True)
+    self.attention = VisualAttention(in_dim=in_dim, attn_dim=attn_dim)
     self.normalization = nn.InstanceNorm2d(in_dim, affine=True)
 
   def forward(self, sketch, exemplar):
-    b, c, h, w = sketch.shape
-    sketch = sketch.view((b, h*w, c))
-    exemplar = exemplar.view((b, h*w, c))
-    attn_out, attn_output_weights = self.attention(sketch, exemplar, exemplar)
-
-    texture_transfer = sketch + attn_out
-    texture_transfer = texture_transfer.view((b, c, h, w))
+    texture_transfer, texture, attn_output_weights = self.attention(sketch, exemplar)
     texture_transfer = self.normalization(texture_transfer)
 
-    return texture_transfer, attn_output_weights
+    return texture_transfer, texture, attn_output_weights
 
 
 class SketchColorizer(nn.Module):
@@ -75,10 +70,10 @@ class SketchColorizer(nn.Module):
       exemplars = layer(exemplars)
 
     # Compute attention to transfer texture from exemplar to sketch
-    sketch, attn_out_weights = self.texture_transfer(sketch, exemplars) # TODO: Visualize attention layer
+    sketch, texture, attn_out_weights = self.texture_transfer(sketch, exemplars) # TODO: Visualize attention layer
 
     for i, layer in enumerate(self.colorizer_decoder):
-      sketch = layer(sketch, skip[-(i + 1)])
+      sketch, texture = layer(sketch, skip[-(i + 1)], texture)
 
     for i, layer in enumerate(self.colorizer_output):
       sketch = layer(sketch)
@@ -151,7 +146,7 @@ class SketchColoringModule(pl.LightningModule):
     return colored
 
   def training_step(self, batch, batch_idx, optimizer_idx=0):
-    images, sketches, exemplars, images_lab = self._exemplars_from_batch(batch)
+    images, sketches, exemplars, images_lab = self._exemplars_from_transformations(batch)
 
     # train generator
     if optimizer_idx == 0:
@@ -270,13 +265,16 @@ class SketchColoringModule(pl.LightningModule):
 
     return (images, sketches, exemplars, images_lab)
 
-  def _exemplars_from_transformations(self, images):
-    raise("Not finalized!!!")
+  def _exemplars_from_transformations(self, batch):
+    images, sketches, images_lab = batch
+    xs = torch.tensor([-1.0, 1, 0, -1, 1])
+    ys = torch.tensor([-1.0, -1, 0, 1, 1])
 
-    points_src = torch.rand(images.shape[0], 5, 2)
-    points_dst = torch.rand(images.shape[0], 5, 2)
+    points_src = torch.stack((xs, ys), 1).unsqueeze(0)
+    points_src = torch.repeat_interleave(points_src, images_lab.shape[0], dim=0)
+    points_dst = points_src + torch.rand(images_lab.shape[0], 5, 2) * 2 - .5
     # note that we are getting the reverse transform: dst -> src
     kernel_weights, affine_weights = get_tps_transform(points_dst, points_src)
-    exemplars = warp_image_tps(images, points_src, kernel_weights, affine_weights)
+    exemplars = warp_image_tps(images_lab.clone(), points_src, kernel_weights, affine_weights)
 
-    return exemplars
+    return (images, sketches, exemplars[:, 1:], images_lab)
