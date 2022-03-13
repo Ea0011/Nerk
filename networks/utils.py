@@ -16,7 +16,7 @@ def construct_unet(params):
       encoder = UNetEncoderBlock(enc_dims['in_c'], enc_dims['out_c'])
       enc_layers.append(encoder)
     
-    bottle_neck = ConvBlock(params["encoder_blocks"][-1]['out_c'], params["encoder_blocks"][-1]['out_c'])
+    bottle_neck = ConvBlock(params["encoder_blocks"][-1]['out_c'], 2 * params["encoder_blocks"][-1]['out_c'])
     bottle_neck_layers.append(bottle_neck)
 
     encoder = nn.ModuleList(enc_layers)
@@ -31,7 +31,7 @@ def construct_unet(params):
     enc_layers.append(encoder)
     dec_layers.append(decoder)
 
-  bottle_neck = ConvBlock(encoder_blocks[-1]['out_c'], encoder_blocks[-1]['out_c'])
+  bottle_neck = ConvBlock(encoder_blocks[-1]['out_c'], 2 * encoder_blocks[-1]['out_c'])
   bottle_neck_layers.append(bottle_neck)
 
   output = nn.Conv2d(decoder_blocks[-1]['out_c'], 3, kernel_size=1)

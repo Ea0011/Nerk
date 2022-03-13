@@ -5,17 +5,17 @@ class ConvBlock(nn.Module):
   def __init__(self, in_c, out_c):
     super().__init__()
     self.conv1 = nn.Conv2d(in_c, out_c, kernel_size=3, padding=1)
-    self.bn1 = nn.BatchNorm2d(out_c)
+    self.norm_1 = nn.InstanceNorm2d(out_c, affine=True)
     self.conv2 = nn.Conv2d(out_c, out_c, kernel_size=3, padding=1)
-    self.bn2 = nn.BatchNorm2d(out_c)
-    self.relu = nn.ReLU()
+    self.norm_2 = nn.InstanceNorm2d(out_c, affine=True)
+    self.relu = nn.LeakyReLU()
 
   def forward(self, inputs):
     x = self.conv1(inputs)
-    x = self.bn1(x)
+    x = self.norm_1(x)
     x = self.relu(x)
     x = self.conv2(x)
-    x = self.bn2(x)
+    x = self.norm_2(x)
     x = self.relu(x)
 
     return x

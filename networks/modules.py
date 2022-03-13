@@ -31,17 +31,23 @@ class DiscriminatorModule(nn.Module):
 
     return validity
 
-# TODO: make texture transfer perform multiple attention + convolution operations
 class TextureTransfer(nn.Module):
-  def __init__(self, attn_heads, in_dim=256) -> None:
+  def __init__(self, attn_heads, in_dim=512) -> None:
     super().__init__()
     self.attention = nn.MultiheadAttention(embed_dim=in_dim, num_heads=attn_heads, batch_first=True)
+    self.normalization = nn.InstanceNorm2d(in_dim, affine=True)
 
   def forward(self, sketch, exemplar):
-    attn_out, _ = self.attention(sketch, exemplar, exemplar)
-    texture_transfer = torch.cat((sketch, attn_out), dim=2)
+    b, c, h, w = sketch.shape
+    sketch = sketch.view((b, h*w, c))
+    exemplar = exemplar.view((b, h*w, c))
+    attn_out, attn_output_weights = self.attention(sketch, exemplar, exemplar)
 
-    return texture_transfer
+    texture_transfer = sketch + attn_out
+    texture_transfer = texture_transfer.view((b, c, h, w))
+    texture_transfer = self.normalization(texture_transfer)
+
+    return texture_transfer, attn_output_weights
 
 
 class SketchColorizer(nn.Module):
@@ -50,7 +56,7 @@ class SketchColorizer(nn.Module):
     self.colorizer_params = colorizer_params
     self.colorizer_encoder, self.colorizer_bottleneck, self.colorizer_decoder, self.colorizer_output = construct_unet(colorizer_params)
     self.style_encoder, self.style_bottleneck = construct_unet(style_params)
-    self.texture_transfer = TextureTransfer(8, self.colorizer_params['encoder_blocks'][-1]['out_c']) # TODO: parametrize
+    self.texture_transfer = TextureTransfer(8, 2 * self.colorizer_params['encoder_blocks'][-1]['out_c'])
 
   def forward(self, sketch, exemplars):
     skip = []
@@ -68,11 +74,8 @@ class SketchColorizer(nn.Module):
     for i, layer in enumerate(self.style_bottleneck):
       exemplars = layer(exemplars)
 
-    # B x C x H x W -> B x H*W x C
     # Compute attention to transfer texture from exemplar to sketch
-    b, c, h, w = sketch.shape
-    transfer = self.texture_transfer(sketch.view((b, h*w, c)), exemplars.view((b, h*w, c)))
-    sketch = transfer.view((b, c*2, h, w))
+    sketch, attn_out_weights = self.texture_transfer(sketch, exemplars) # TODO: Visualize attention layer
 
     for i, layer in enumerate(self.colorizer_decoder):
       sketch = layer(sketch, skip[-(i + 1)])
@@ -131,6 +134,7 @@ class SketchColoringModule(pl.LightningModule):
       self.Discriminator = DiscriminatorModule(self.hparams.discriminator_params)
 
     # Initialiaze colored sketch generator
+    self.color_loss = nn.SmoothL1Loss(beta=0.1)
     self.reconstruction_loss = nn.SmoothL1Loss(beta=0.1)
     self.adversarial_loss = nn.BCELoss()
     self.perceptual_loss = PerceptualLossVgg(device=device, layer=self.hparams.perceptual_layer)
@@ -155,7 +159,7 @@ class SketchColoringModule(pl.LightningModule):
       self.generated_imgs = self(sketches, exemplars)
 
       # log sampled images
-      sample_imgs = self.generated_imgs[:6]
+      sample_imgs = self.generated_imgs[:6].detach().clone()
       sample_imgs = self.lab_to_rgb(sample_imgs)
       grid = torchvision.utils.make_grid(sample_imgs)
       self.logger.experiment.add_image("generated_images", grid, self.current_epoch)
@@ -170,14 +174,15 @@ class SketchColoringModule(pl.LightningModule):
         # adversarial loss is binary cross-entropy
         g_loss = self.adversarial_loss(self.Discriminator(self.generated_imgs), valid)
 
-      color_channels = self.generated_imgs[:, 1:]
-      rec_loss = self.reconstruction_loss(color_channels, images_lab[:, 1:])
+      color_loss = self.color_loss(self.generated_imgs, images_lab)
 
-      rgb_images = self.lab_to_rgb(self.generated_imgs)
+      rgb_images = self.lab_to_rgb(self.generated_imgs.clone())
       perc_loss = self.perceptual_loss(rgb_images, images)
+      rec_loss = self.reconstruction_loss(rgb_images, images)
 
       tqdm_dict = {"g_loss": g_loss, 'rec_loss': rec_loss}
-      total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss
+      total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss + \
+        self.hparams.color * color_loss
       output = OrderedDict({
         "loss": total_loss,
         "perceptual_loss": perc_loss,
@@ -261,11 +266,13 @@ class SketchColoringModule(pl.LightningModule):
     images_lab = torch.repeat_interleave(images_lab, self.hparams.num_exemplars, dim=0)
     sketches = torch.repeat_interleave(sketches, self.hparams.num_exemplars, dim=0)
     perm = torch.randperm(images.shape[0])
-    exemplars = images_lab[perm, 1:] # retain only color information for exemplars
+    exemplars = images_lab[perm, 1:].clone() # retain only color information for exemplars
 
     return (images, sketches, exemplars, images_lab)
 
   def _exemplars_from_transformations(self, images):
+    raise("Not finalized!!!")
+
     points_src = torch.rand(images.shape[0], 5, 2)
     points_dst = torch.rand(images.shape[0], 5, 2)
     # note that we are getting the reverse transform: dst -> src
