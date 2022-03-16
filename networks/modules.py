@@ -278,11 +278,13 @@ class SketchColoringModule(pl.LightningModule):
           'optimizer': opt_g,
           'lr_scheduler': generator_scheduler,
           'frequency': 1,
+          'interval': 'step',
         },
         {
           'optimizer': opt_d,
           'lr_scheduler': discriminator_scheduler,
           'frequency': 5,
+          'interval': 'step',
         },
       )
       # return [opt_g, opt_d], [generator_scheduler, discriminator_scheduler]
