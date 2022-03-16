@@ -114,6 +114,7 @@ class SketchColoringModule(pl.LightningModule):
   weight_decay: float
   device: torch.device
   perceptual_layer: int, layer number of VGG network
+  exemplar_method: string
   '''
   def __init__(self, device, **hparams):
     super(SketchColoringModule, self).__init__()
@@ -152,7 +153,8 @@ class SketchColoringModule(pl.LightningModule):
     return colored
 
   def training_step(self, batch, batch_idx, optimizer_idx):
-    images, sketches, exemplars, images_lab = self._exemplars_from_transformations(batch)
+    images, sketches, exemplars, images_lab = self._exemplars_from_transformations(batch) if \
+      self.hparams.exemplar_method == "self" else self._exemplars_from_batch(batch)
 
     # train generator
     if optimizer_idx == 0:
