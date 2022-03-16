@@ -1,7 +1,7 @@
 from networks.layers import VisualAttention
 from networks.losses import PerceptualLossVgg
 from networks.utils import construct_unet
-from processing.transforms import OutputTransform
+from processing.transforms import DenormalizeLABImage, DenormalizeRGBImage, OutputTransform
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -130,9 +130,7 @@ class SketchColoringModule(pl.LightningModule):
 
     # initialize generator and dsicriminator
     self.Generator = SketchColorizer(self.hparams.colorizer_params, self.hparams.style_params)
-
-    if self.hparams.train_gan:
-      self.Discriminator = DiscriminatorModule(self.hparams.discriminator_params)
+    self.Discriminator = DiscriminatorModule(self.hparams.discriminator_params)
 
     # Initialiaze colored sketch generator
     self.color_loss = nn.SmoothL1Loss()
@@ -141,6 +139,8 @@ class SketchColoringModule(pl.LightningModule):
     self.discirminator_loss = nn.BCEWithLogitsLoss()
     self.perceptual_loss = PerceptualLossVgg(device=device, layer=self.hparams.perceptual_layer)
     self.lab_to_rgb = OutputTransform()
+    self.denormalize_lab = DenormalizeLABImage()
+    self.denormalize_rgb = DenormalizeRGBImage()
     
     # initialize a variable to hold generated images
     self.generated_imgs = None
@@ -167,11 +167,14 @@ class SketchColoringModule(pl.LightningModule):
       grid = torchvision.utils.make_grid(sample_imgs)
       self.logger.experiment.add_image("generated_images", grid, self.current_epoch)
 
-      color_loss = self.color_loss(self.generated_imgs, images_lab)
+      color_loss = self.color_loss(self.denormalize_lab(self.generated_imgs.clone()),
+        self.denormalize_lab(images_lab.clone()))
 
       rgb_images = self.lab_to_rgb(self.generated_imgs.clone())
-      perc_loss = self.perceptual_loss(rgb_images, images)
-      rec_loss = self.reconstruction_loss(rgb_images, images)
+
+      perc_loss = self.perceptual_loss(rgb_images, images) if self.hparams.perc > 0 else 0
+      rec_loss = self.reconstruction_loss(self.denormalize_rgb(rgb_images.clone()),
+        self.denormalize_rgb(images.clone()))
 
       g_loss = 0
       if self.hparams.train_gan:
@@ -181,7 +184,8 @@ class SketchColoringModule(pl.LightningModule):
         valid = valid.type_as(sketches)
 
         # adversarial loss is binary cross-entropy
-        g_loss = self.adversarial_loss(self.Discriminator(rgb_images), valid)
+        cgan_input = torch.cat([sketches, rgb_images], axis=1)
+        g_loss = self.adversarial_loss(self.Discriminator(cgan_input), valid) / 2
 
       total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss + \
         self.hparams.color * color_loss
@@ -211,7 +215,8 @@ class SketchColoringModule(pl.LightningModule):
       valid = torch.ones(images.size(0), 1)
       valid = valid.type_as(images)
       
-      real_loss = self.discirminator_loss(self.Discriminator(images), valid)
+      cgan_input = torch.cat([sketches, images], axis=1)
+      real_loss = self.discirminator_loss(self.Discriminator(cgan_input), valid) / 2
 
       # how well can it label as fake?
       fake = torch.zeros(images.size(0), 1)
@@ -219,7 +224,9 @@ class SketchColoringModule(pl.LightningModule):
 
       self.generated_imgs = self(sketches, exemplars).detach()
       rgb_images = self.lab_to_rgb(self.generated_imgs)
-      fake_loss = self.discirminator_loss(self.Discriminator(rgb_images), fake)
+
+      cgan_input = torch.cat([sketches, rgb_images], axis=1)
+      fake_loss = self.discirminator_loss(self.Discriminator(cgan_input), fake) / 2
 
       # discriminator loss is the average of these
       d_loss = (real_loss + fake_loss) / 2
@@ -229,21 +236,24 @@ class SketchColoringModule(pl.LightningModule):
       return output
 
   def validation_step(self, batch, batch_idx):
-    images, sketches, exemplars, images_lab = self._exemplars_from_batch(batch)
+    images, sketches, exemplars, images_lab = self._exemplars_from_transformations(batch) if \
+      self.hparams.exemplar_method == "self" else self._exemplars_from_batch(batch)
+
     generated_images = self(sketches, exemplars)
+    rgb_images = self.lab_to_rgb(generated_images.clone())
 
     g_loss = 0
     if self.hparams.train_gan:
       valid = torch.ones(sketches.size(0), 1)
       valid = valid.type_as(sketches)
-      g_loss = self.adversarial_loss(self.Discriminator(generated_images), valid)
 
-    color_channels = generated_images[:, 1:]
-    rec_loss = self.reconstruction_loss(color_channels, images_lab[:, 1:])
+      cgan_input = torch.cat([sketches, rgb_images], axis=1)
+      g_loss = self.adversarial_loss(self.Discriminator(cgan_input), valid) / 2
 
-    rgb_images = self.lab_to_rgb(generated_images)
-    perc_loss = self.perceptual_loss(rgb_images, images)
+    rec_loss = self.reconstruction_loss(self.denormalize_lab(generated_images.clone()), 
+      self.denormalize_lab(images_lab.clone()))
 
+    perc_loss = self.perceptual_loss(rgb_images, images) if self.hparams.perc > 0 else 0
     total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss
 
     self.log('val_loss', total_loss, prog_bar=True)
@@ -303,6 +313,10 @@ class SketchColoringModule(pl.LightningModule):
 
   def _exemplars_from_transformations(self, batch):
     images, sketches, images_lab = batch
+    images = torch.repeat_interleave(images, self.hparams.num_exemplars, dim=0)
+    images_lab = torch.repeat_interleave(images_lab, self.hparams.num_exemplars, dim=0)
+    sketches = torch.repeat_interleave(sketches, self.hparams.num_exemplars, dim=0)
+
     xs = torch.tensor([-1.0, 1, 0, -1, 1])
     ys = torch.tensor([-1.0, -1, 0, 1, 1])
 

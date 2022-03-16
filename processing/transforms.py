@@ -46,3 +46,14 @@ class OutputTransform():
     image_lab[:,1:] = image_lab[:,1:] * 127
 
     return self.transform(image_lab, clip=True)
+
+class DenormalizeLABImage():
+  def __call__(self, image_lab):
+    image_lab[:,0] = (image_lab[:,0] + 1) * 50
+    image_lab[:,1:] = image_lab[:,1:] * 127
+
+    return image_lab
+
+class DenormalizeRGBImage():
+  def __call__(self, image_rgb):
+    return image_rgb * 255
