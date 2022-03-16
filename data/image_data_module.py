@@ -1,4 +1,5 @@
 from data.image_folder_dataset import ImageFolderDataset
+from processing.XDoG import PARAM_DEFAULT
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 import torch
@@ -9,6 +10,7 @@ class ImageDataModule(pl.LightningDataModule):
               batch_size = 32,
               split_ratios = [.8, .1, .1],
               image_size=128,
+              sketch_params=PARAM_DEFAULT,
               *args,
               **kwargs):
 
