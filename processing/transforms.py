@@ -2,7 +2,7 @@ from processing.XDoG import xdog, PARAM_DEFAULT
 import numpy as np
 from torchvision import transforms
 import torch
-from kornia.color import lab_to_rgb
+from kornia.color import LabToRgb
 class Sketch():
   def __init__(self, params = PARAM_DEFAULT):
     self.params = params
@@ -38,7 +38,7 @@ class InputTransform():
 
 class OutputTransform():
   def __init__(self) -> None:
-    self.transform = lab_to_rgb
+    self.transform = LabToRgb()
 
   def __call__(self, image_lab):
     # Denormalize input to transform to back to rgb data
