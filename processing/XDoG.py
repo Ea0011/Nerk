@@ -2,6 +2,7 @@ import numpy as np
 import numpy as np
 from skimage.filters import threshold_otsu
 import torchvision.transforms as T
+import torch
 
 def xdog(im, gamma=0.98, phi=200, eps=-0.1, k=1.6, sigma=0.8, binarize=False):
   # Source : https://github.com/CemalUnal/XDoG-Filter
@@ -16,8 +17,8 @@ def xdog(im, gamma=0.98, phi=200, eps=-0.1, k=1.6, sigma=0.8, binarize=False):
   imdiff -= imdiff.min()
   imdiff /= imdiff.max()
   if binarize:
-    th = threshold_otsu(imdiff.permute(1, 2, 0))
-    imdiff = imdiff >= th
+    mu = imdiff.mean()
+    imdiff = torch.where(imdiff > mu, 1, 0)
 
   return imdiff
 

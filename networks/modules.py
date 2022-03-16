@@ -280,7 +280,7 @@ class SketchColoringModule(pl.LightningModule):
       opt_d = torch.optim.AdamW(self.Discriminator.parameters(), lr=discriminator_lr, betas=(b1, b2), weight_decay=self.hparams.weight_decay)
 
       discriminator_scheduler = {
-        'scheduler': torch.optim.lr_scheduler.CosineAnnealingLR(opt_d, T_max=10),
+        'scheduler': torch.optim.lr_scheduler.CosineAnnealingLR(opt_d, T_max=100),
         'interval': 'epoch',
       }
 
@@ -293,7 +293,7 @@ class SketchColoringModule(pl.LightningModule):
         {
           'optimizer': opt_d,
           'lr_scheduler': discriminator_scheduler,
-          'frequency': 5,
+          'frequency': 2,
         },
       )
       # return [opt_g, opt_d], [generator_scheduler, discriminator_scheduler]
