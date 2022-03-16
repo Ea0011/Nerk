@@ -22,7 +22,6 @@ class DiscriminatorModule(nn.Module):
       nn.LeakyReLU(),
       nn.Flatten(),
       nn.Linear(linear_dim, 1),
-      nn.Sigmoid(),
     )
   
   def forward(self, input):
@@ -137,8 +136,8 @@ class SketchColoringModule(pl.LightningModule):
     # Initialiaze colored sketch generator
     self.color_loss = nn.SmoothL1Loss()
     self.reconstruction_loss = nn.SmoothL1Loss()
-    self.adversarial_loss = nn.BCELoss()
-    self.discirminator_loss = nn.BCELoss()
+    self.adversarial_loss = nn.BCEWithLogitsLoss()
+    self.discirminator_loss = nn.BCEWithLogitsLoss()
     self.perceptual_loss = PerceptualLossVgg(device=device, layer=self.hparams.perceptual_layer)
     self.lab_to_rgb = OutputTransform()
     
