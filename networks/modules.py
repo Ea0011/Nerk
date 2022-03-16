@@ -305,8 +305,8 @@ class SketchColoringModule(pl.LightningModule):
     ys = torch.tensor([-1.0, -1, 0, 1, 1])
 
     points_src = torch.stack((xs, ys), 1).unsqueeze(0)
-    points_src = torch.repeat_interleave(points_src, images_lab.shape[0], dim=0)
-    points_dst = points_src + torch.rand(images_lab.shape[0], 5, 2) * 2 - .5
+    points_src = torch.repeat_interleave(points_src, images_lab.shape[0], dim=0).type_as(images_lab)
+    points_dst = points_src + torch.rand(images_lab.shape[0], 5, 2).type_as(images_lab) * 2 - .5
     # note that we are getting the reverse transform: dst -> src
     kernel_weights, affine_weights = get_tps_transform(points_dst, points_src)
     exemplars = warp_image_tps(images_lab.clone(), points_src, kernel_weights, affine_weights)
