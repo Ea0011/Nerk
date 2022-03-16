@@ -222,7 +222,7 @@ class SketchColoringModule(pl.LightningModule):
 
       # discriminator loss is the average of these
       d_loss = (real_loss + fake_loss) / 2
-      discriminator_log = {"d_loss": d_loss}
+      discriminator_log = {"d_loss": d_loss, 'd_loss_fake': fake_loss, 'd_loss_real': real_loss}
       output = OrderedDict({"loss": d_loss, "progress_bar": discriminator_log, "log": discriminator_log})
       self.log_dict(discriminator_log, on_step=True, on_epoch=True, prog_bar=True, logger=True)
       return output
@@ -278,13 +278,11 @@ class SketchColoringModule(pl.LightningModule):
           'optimizer': opt_g,
           'lr_scheduler': generator_scheduler,
           'frequency': 1,
-          'interval': 'step',
         },
         {
           'optimizer': opt_d,
           'lr_scheduler': discriminator_scheduler,
           'frequency': 5,
-          'interval': 'step',
         },
       )
       # return [opt_g, opt_d], [generator_scheduler, discriminator_scheduler]
