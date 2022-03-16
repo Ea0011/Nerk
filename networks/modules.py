@@ -15,10 +15,13 @@ class DiscriminatorModule(nn.Module):
     super().__init__()
     self.discriminator_params = discriminator_params
     self.discriminator, self.discriminator_bottleneck = construct_unet(self.discriminator_params)
+    out_dim = 2 * self.discriminator_params['encoder_blocks'][-1]['out_c']
+    linear_dim = self.discriminator_params['linear_dim']
     self.classifier = nn.Sequential(
-      nn.AdaptiveAvgPool2d((32, 32)),
+      nn.Conv2d(out_dim, 1, kernel_size=1, padding=0),
+      nn.LeakyReLU(),
       nn.Flatten(),
-      nn.Linear(512, 1),
+      nn.Linear(linear_dim, 1),
       nn.Sigmoid(),
     )
   
@@ -104,6 +107,8 @@ class SketchColoringModule(pl.LightningModule):
   rec: int
   perc: int
   colorizer_lr: float
+  min_lr: float
+  max_lr: float
   discriminator_lr: float
   b1: float
   b2: float
@@ -133,6 +138,7 @@ class SketchColoringModule(pl.LightningModule):
     self.color_loss = nn.SmoothL1Loss()
     self.reconstruction_loss = nn.SmoothL1Loss()
     self.adversarial_loss = nn.BCELoss()
+    self.discirminator_loss = nn.BCELoss()
     self.perceptual_loss = PerceptualLossVgg(device=device, layer=self.hparams.perceptual_layer)
     self.lab_to_rgb = OutputTransform()
     
@@ -146,7 +152,7 @@ class SketchColoringModule(pl.LightningModule):
     colored = self.Generator(sketches, exemplars)
     return colored
 
-  def training_step(self, batch, batch_idx, optimizer_idx=0):
+  def training_step(self, batch, batch_idx, optimizer_idx):
     images, sketches, exemplars, images_lab = self._exemplars_from_transformations(batch)
 
     # train generator
@@ -176,19 +182,20 @@ class SketchColoringModule(pl.LightningModule):
         # adversarial loss is binary cross-entropy
         g_loss = self.adversarial_loss(self.Discriminator(rgb_images), valid)
 
-      tqdm_dict = {"g_loss": g_loss, 'rec_loss': rec_loss}
       total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss + \
         self.hparams.color * color_loss
+
+      generator_log = {"g_loss": g_loss, 'rec_loss': rec_loss, 'prec_loss': perc_loss, 'total_loss': total_loss, 'color_loss': color_loss} 
 
       output = OrderedDict({
         "loss": total_loss,
         "perceptual_loss": perc_loss,
         "reconstruction_loss": rec_loss,
-        "progress_bar": tqdm_dict, 
-        "log": tqdm_dict,
+        "progress_bar": generator_log, 
+        "log": generator_log,
       })
-
       self.log('train_loss', total_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+      self.log_dict(generator_log, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
       return output
 
@@ -203,7 +210,7 @@ class SketchColoringModule(pl.LightningModule):
       valid = torch.ones(images.size(0), 1)
       valid = valid.type_as(images)
       
-      real_loss = self.adversarial_loss(self.Discriminator(images), valid)
+      real_loss = self.discirminator_loss(self.Discriminator(images), valid)
 
       # how well can it label as fake?
       fake = torch.zeros(images.size(0), 1)
@@ -211,12 +218,13 @@ class SketchColoringModule(pl.LightningModule):
 
       self.generated_imgs = self(sketches, exemplars).detach()
       rgb_images = self.lab_to_rgb(self.generated_imgs)
-      fake_loss = self.adversarial_loss(self.Discriminator(rgb_images), fake)
+      fake_loss = self.discirminator_loss(self.Discriminator(rgb_images), fake)
 
       # discriminator loss is the average of these
       d_loss = (real_loss + fake_loss) / 2
-      tqdm_dict = {"d_loss": d_loss}
-      output = OrderedDict({"loss": d_loss, "progress_bar": tqdm_dict, "log": tqdm_dict})
+      discriminator_log = {"d_loss": d_loss}
+      output = OrderedDict({"loss": d_loss, "progress_bar": discriminator_log, "log": discriminator_log})
+      self.log_dict(discriminator_log, on_step=True, on_epoch=True, prog_bar=True, logger=True)
       return output
 
   def validation_step(self, batch, batch_idx):
@@ -251,13 +259,35 @@ class SketchColoringModule(pl.LightningModule):
       betas=(b1, b2),
       weight_decay=self.hparams.weight_decay,)
 
+    generator_scheduler = {
+      'scheduler': torch.optim.lr_scheduler.CyclicLR(opt_g, base_lr=self.hparams.min_lr, max_lr=self.hparams.max_lr, step_size_up=50, cycle_momentum=False),
+      'interval': 'step',
+    }
+
     if self.hparams.train_gan:
       discriminator_lr = self.hparams.discriminator_lr
       opt_d = torch.optim.AdamW(self.Discriminator.parameters(), lr=discriminator_lr, betas=(b1, b2), weight_decay=self.hparams.weight_decay)
 
-      return [opt_g, opt_d], []
+      discriminator_scheduler = {
+        'scheduler': torch.optim.lr_scheduler.CosineAnnealingLR(opt_d, T_max=10),
+        'interval': 'epoch',
+      }
 
-    return [opt_g], []
+      return (
+        {
+          'optimizer': opt_g,
+          'lr_scheduler': generator_scheduler,
+          'frequency': 1,
+        },
+        {
+          'optimizer': opt_d,
+          'lr_scheduler': discriminator_scheduler,
+          'frequency': 5,
+        },
+      )
+      # return [opt_g, opt_d], [generator_scheduler, discriminator_scheduler]
+
+    return [opt_g], [generator_scheduler]
   
   # An exemplar is an image from the same batch as the training sample
   def _exemplars_from_batch(self, batch):

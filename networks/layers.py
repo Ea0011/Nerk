@@ -43,7 +43,7 @@ class VisualAttention(nn.Module):
     self.query_conv = nn.Conv2d(in_channels = in_dim, out_channels = in_dim // self.attn_dim, kernel_size=1)
     self.key_conv = nn.Conv2d(in_channels = in_dim, out_channels = in_dim // self.attn_dim, kernel_size=1)
     self.value_conv = nn.Conv2d(in_channels = in_dim, out_channels = in_dim, kernel_size=1)
-    self.gamma = nn.Parameter(torch.zeros(1))
+    self.gamma = nn.Parameter(torch.normal(mean=torch.tensor(0, dtype=torch.float), std=torch.tensor(0.01, dtype=torch.float)))
 
     self.softmax = nn.Softmax(dim=-1)
 
@@ -77,6 +77,7 @@ class UNetDecoderBlock(nn.Module):
     self.interpolate = nn.Upsample(scale_factor=2, mode="bilinear")
     self.conv = ConvBlock(2 * out_c, out_c)
     self.conv_1 = nn.Conv2d(in_c, out_c, kernel_size=1)
+    self.norm = nn.InstanceNorm2d(out_c, affine=True)
 
   def forward(self, inputs, skip, texture):
     x = self.up(inputs)
@@ -84,6 +85,7 @@ class UNetDecoderBlock(nn.Module):
     texture = self.interpolate(texture)
     texture = self.conv_1(texture)
     x = x + texture
+    x = self.norm(x)
 
     x = torch.cat([x, skip], axis=1)
     x = self.conv(x)
