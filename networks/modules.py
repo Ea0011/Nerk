@@ -18,7 +18,8 @@ class DiscriminatorModule(nn.Module):
     out_dim = 2 * self.discriminator_params['encoder_blocks'][-1]['out_c']
     linear_dim = self.discriminator_params['linear_dim']
     self.classifier = nn.Sequential(
-      nn.Conv2d(out_dim, out_dim, kernel_size=linear_dim, padding=0),
+      nn.Conv2d(out_dim, 1, kernel_size=1, padding=0),
+      nn.Flatten(),
     )
   
   def forward(self, input):
