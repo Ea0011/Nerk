@@ -19,7 +19,6 @@ class DiscriminatorModule(nn.Module):
     linear_dim = self.discriminator_params['linear_dim']
     self.classifier = nn.Sequential(
       nn.Conv2d(out_dim, 1, kernel_size=1, padding=0),
-      nn.Flatten(),
     )
   
   def forward(self, input):
@@ -178,14 +177,13 @@ class SketchColoringModule(pl.LightningModule):
 
       g_loss = 0
       if self.hparams.train_gan:
-        # ground truth result (ie: all fake)
-        # put on GPU because we created this tensor inside training_loop
-        valid = torch.ones(sketches.size(0), 1)
-        valid = valid.type_as(sketches)
-
         # adversarial loss is binary cross-entropy
         cgan_input = torch.cat([sketches, rgb_images], axis=1)
-        g_loss = self.adversarial_loss(self.Discriminator(cgan_input), valid) / 2
+        cgan_out = self.Discriminator(cgan_input)
+        valid = torch.ones_like(cgan_out)
+        valid = valid.type_as(sketches)
+
+        g_loss = self.adversarial_loss(cgan_out, valid)
 
       total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss + \
         self.hparams.color * color_loss
@@ -210,23 +208,22 @@ class SketchColoringModule(pl.LightningModule):
       if not self.hparams.train_gan:
         pass
       # Measure discriminator's ability to classify real from generated samples
-
       # how well can it label as real?
-      valid = torch.ones(images.size(0), 1)
-      valid = valid.type_as(images)
-      
       cgan_input = torch.cat([sketches, images], axis=1)
-      real_loss = self.discirminator_loss(self.Discriminator(cgan_input), valid) / 2
+      cgan_out = self.Discriminator(cgan_input)
+      valid = torch.ones_like(cgan_out)
+      valid = valid.type_as(sketches)
+      real_loss = self.discirminator_loss(cgan_out, valid)
 
       # how well can it label as fake?
-      fake = torch.zeros(images.size(0), 1)
-      fake = fake.type_as(images)
-
       self.generated_imgs = self(sketches, exemplars).detach()
       rgb_images = self.lab_to_rgb(self.generated_imgs)
 
       cgan_input = torch.cat([sketches, rgb_images], axis=1)
-      fake_loss = self.discirminator_loss(self.Discriminator(cgan_input), fake) / 2
+      cgan_out = self.Discriminator(cgan_input)
+      fake = torch.zeros_like(cgan_out)
+      fake = fake.type_as(images)
+      fake_loss = self.discirminator_loss(cgan_out, fake)
 
       # discriminator loss is the average of these
       d_loss = (real_loss + fake_loss) / 2
@@ -244,11 +241,11 @@ class SketchColoringModule(pl.LightningModule):
 
     g_loss = 0
     if self.hparams.train_gan:
-      valid = torch.ones(sketches.size(0), 1)
-      valid = valid.type_as(sketches)
-
       cgan_input = torch.cat([sketches, rgb_images], axis=1)
-      g_loss = self.adversarial_loss(self.Discriminator(cgan_input), valid) / 2
+      cgan_out = self.Discriminator(cgan_input)
+      valid = torch.ones_like(cgan_out)
+      valid = valid.type_as(sketches)
+      g_loss = self.adversarial_loss(cgan_out, valid)
 
     rec_loss = self.reconstruction_loss(self.denormalize_lab(generated_images.clone()), 
       self.denormalize_lab(images_lab.clone()))
