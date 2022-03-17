@@ -18,10 +18,7 @@ class DiscriminatorModule(nn.Module):
     out_dim = 2 * self.discriminator_params['encoder_blocks'][-1]['out_c']
     linear_dim = self.discriminator_params['linear_dim']
     self.classifier = nn.Sequential(
-      nn.Conv2d(out_dim, 1, kernel_size=1, padding=0),
-      nn.LeakyReLU(),
-      nn.Flatten(),
-      nn.Linear(linear_dim, 1),
+      nn.Conv2d(out_dim, out_dim, kernel_size=linear_dim, padding=0),
     )
   
   def forward(self, input):
@@ -115,6 +112,8 @@ class SketchColoringModule(pl.LightningModule):
   device: torch.device
   perceptual_layer: int, layer number of VGG network
   exemplar_method: string
+  generator_frequency: int
+  discriminator_frequency: int
   '''
   def __init__(self, device, **hparams):
     super(SketchColoringModule, self).__init__()
@@ -167,8 +166,8 @@ class SketchColoringModule(pl.LightningModule):
       grid = torchvision.utils.make_grid(sample_imgs)
       self.logger.experiment.add_image("generated_images", grid, self.current_epoch)
 
-      color_loss = self.color_loss(self.denormalize_lab(self.generated_imgs.clone()),
-        self.denormalize_lab(images_lab.clone()))
+      color_loss = self.color_loss(self.denormalize_lab(self.generated_imgs.clone())[:, 1:],
+        self.denormalize_lab(images_lab.clone())[:, 1:])
 
       rgb_images = self.lab_to_rgb(self.generated_imgs.clone())
 
@@ -288,15 +287,14 @@ class SketchColoringModule(pl.LightningModule):
         {
           'optimizer': opt_g,
           'lr_scheduler': generator_scheduler,
-          'frequency': 1,
+          'frequency': self.hparams.generator_frequency,
         },
         {
           'optimizer': opt_d,
           'lr_scheduler': discriminator_scheduler,
-          'frequency': 2,
+          'frequency': self.hparams.discriminator_frequency,
         },
       )
-      # return [opt_g, opt_d], [generator_scheduler, discriminator_scheduler]
 
     return [opt_g], [generator_scheduler]
   

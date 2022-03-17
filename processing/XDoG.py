@@ -18,7 +18,7 @@ def xdog(im, gamma=0.98, phi=200, eps=-0.1, k=1.6, sigma=0.8, binarize=True):
   imdiff /= imdiff.max()
   if binarize:
     mu = imdiff.mean()
-    imdiff = torch.where(imdiff > mu, 1, 0)
+    imdiff = torch.where(imdiff > mu, 1.0, 0.0)
 
   return imdiff
 

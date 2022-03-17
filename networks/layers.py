@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-import torch.nn.functional as F
 
 class ConvBlock(nn.Module):
   def __init__(self, in_c, out_c):
@@ -9,7 +8,7 @@ class ConvBlock(nn.Module):
     self.norm_1 = nn.InstanceNorm2d(out_c, affine=True)
     self.conv2 = nn.Conv2d(out_c, out_c, kernel_size=3, padding=1)
     self.norm_2 = nn.InstanceNorm2d(out_c, affine=True)
-    self.relu = nn.LeakyReLU()
+    self.relu = nn.LeakyReLU(0.2)
 
   def forward(self, inputs):
     x = self.conv1(inputs)
@@ -25,7 +24,7 @@ class UNetEncoderBlock(nn.Module):
   def __init__(self, in_c, out_c):
     super().__init__()
     self.conv = ConvBlock(in_c, out_c)
-    self.pool = nn.MaxPool2d((2, 2))
+    self.pool = nn.AvgPool2d((2, 2))
 
   def forward(self, inputs):
     x = self.conv(inputs)
@@ -43,7 +42,7 @@ class VisualAttention(nn.Module):
     self.query_conv = nn.Conv2d(in_channels = in_dim, out_channels = in_dim // self.attn_dim, kernel_size=1)
     self.key_conv = nn.Conv2d(in_channels = in_dim, out_channels = in_dim // self.attn_dim, kernel_size=1)
     self.value_conv = nn.Conv2d(in_channels = in_dim, out_channels = in_dim, kernel_size=1)
-    self.gamma = nn.Parameter(torch.normal(mean=torch.tensor(0, dtype=torch.float), std=torch.tensor(0.01, dtype=torch.float)))
+    self.gamma = nn.Parameter(torch.tensor(1, dtype=torch.float))
 
     self.softmax = nn.Softmax(dim=-1)
 
