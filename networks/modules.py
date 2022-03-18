@@ -51,7 +51,8 @@ class SketchColorizer(nn.Module):
     self.colorizer_params = colorizer_params
     self.colorizer_encoder, self.colorizer_bottleneck, self.colorizer_decoder, self.colorizer_output = construct_unet(colorizer_params)
     self.style_encoder, self.style_bottleneck = construct_unet(style_params)
-    self.texture_transfer = TextureTransfer(8, 2 * self.colorizer_params['encoder_blocks'][-1]['out_c'])
+    self.texture_transfer_1 = TextureTransfer(4, 2 * self.colorizer_params['encoder_blocks'][-1]['out_c'])
+    self.texture_transfer_2 = TextureTransfer(4, 2 * self.colorizer_params['encoder_blocks'][-1]['out_c'])
 
   def forward(self, sketch, exemplars):
     skip = []
@@ -70,7 +71,10 @@ class SketchColorizer(nn.Module):
       exemplars = layer(exemplars)
 
     # Compute attention to transfer texture from exemplar to sketch
-    sketch, texture, attn_out_weights = self.texture_transfer(sketch, exemplars) # TODO: Visualize attention layer
+    sketch, texture, attn_out_weights = self.texture_transfer_1(sketch, exemplars) # TODO: Visualize attention layer
+    sketch, texture, attn_out_weights = self.texture_transfer_2(sketch, exemplars) # TODO: Visualize attention layer
+    texture = sketch.clone()
+    # texture = torch.zeros_like(sketch)
 
     for i, layer in enumerate(self.colorizer_decoder):
       sketch, texture = layer(sketch, skip[-(i + 1)], texture)
@@ -178,7 +182,7 @@ class SketchColoringModule(pl.LightningModule):
       g_loss = 0
       if self.hparams.train_gan:
         # adversarial loss is binary cross-entropy
-        cgan_input = torch.cat([sketches, rgb_images], axis=1)
+        cgan_input = torch.cat([sketches, rgb_images, self.generated_imgs.clone()], axis=1)
         cgan_out = self.Discriminator(cgan_input)
         valid = torch.ones_like(cgan_out)
         valid = valid.type_as(sketches)
@@ -209,7 +213,7 @@ class SketchColoringModule(pl.LightningModule):
         pass
       # Measure discriminator's ability to classify real from generated samples
       # how well can it label as real?
-      cgan_input = torch.cat([sketches, images], axis=1)
+      cgan_input = torch.cat([sketches, images, images_lab.clone()], axis=1)
       cgan_out = self.Discriminator(cgan_input)
       valid = torch.ones_like(cgan_out)
       valid = valid.type_as(sketches)
@@ -219,7 +223,7 @@ class SketchColoringModule(pl.LightningModule):
       self.generated_imgs = self(sketches, exemplars).detach()
       rgb_images = self.lab_to_rgb(self.generated_imgs)
 
-      cgan_input = torch.cat([sketches, rgb_images], axis=1)
+      cgan_input = torch.cat([sketches, rgb_images, self.generated_imgs.clone()], axis=1)
       cgan_out = self.Discriminator(cgan_input)
       fake = torch.zeros_like(cgan_out)
       fake = fake.type_as(images)
@@ -241,7 +245,7 @@ class SketchColoringModule(pl.LightningModule):
 
     g_loss = 0
     if self.hparams.train_gan:
-      cgan_input = torch.cat([sketches, rgb_images], axis=1)
+      cgan_input = torch.cat([sketches, rgb_images, generated_images.clone()], axis=1)
       cgan_out = self.Discriminator(cgan_input)
       valid = torch.ones_like(cgan_out)
       valid = valid.type_as(sketches)
@@ -268,17 +272,21 @@ class SketchColoringModule(pl.LightningModule):
       weight_decay=self.hparams.weight_decay,)
 
     generator_scheduler = {
-      'scheduler': torch.optim.lr_scheduler.CyclicLR(opt_g, base_lr=self.hparams.min_lr, max_lr=self.hparams.max_lr, step_size_up=50, cycle_momentum=False),
+      'scheduler': torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt_g, T_0=100, verbose=True, eta_min=1e-7),
       'interval': 'step',
     }
 
     if self.hparams.train_gan:
       discriminator_lr = self.hparams.discriminator_lr
-      opt_d = torch.optim.AdamW(self.Discriminator.parameters(), lr=discriminator_lr, betas=(b1, b2), weight_decay=self.hparams.weight_decay)
+      opt_d = torch.optim.AdamW(
+        self.Discriminator.parameters(),
+        lr=discriminator_lr,
+        betas=(b1, b2),
+        weight_decay=self.hparams.weight_decay,)
 
       discriminator_scheduler = {
-        'scheduler': torch.optim.lr_scheduler.CosineAnnealingLR(opt_d, T_max=100),
-        'interval': 'epoch',
+        'scheduler': torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt_d, T_0=100, verbose=True, eta_min=1e-6),
+        'interval': 'step',
       }
 
       return (

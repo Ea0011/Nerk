@@ -38,3 +38,14 @@ class PerceptualLossVgg(nn.Module):
       self.layer_out[layer_name] = output
 
     return hook
+
+# Earth mover loss for WGAN type of training
+class EMLoss(nn.Module):
+  def __init__(self) -> None:
+    super().__init__()
+
+  def compute_discriminator_loss(self, real_scores, generated_scores):
+    return real_scores.mean() - generated_scores.mean()
+
+  def compute_generator_loss(self, generated_scores):
+    return -1.0 * generated_scores.mean()
