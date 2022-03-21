@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import numpy as np
 
 class ConvBlock(nn.Module):
   def __init__(self, in_c, out_c):
@@ -38,6 +39,7 @@ class VisualAttention(nn.Module):
     super(VisualAttention, self).__init__()
     self.chanel_in = in_dim
     self.attn_dim = attn_dim
+    self.scale = 1.0 / np.sqrt(in_dim // self.attn_dim)
     
     self.query_conv = nn.Conv2d(in_channels = in_dim, out_channels = in_dim // self.attn_dim, kernel_size=1)
     self.key_conv = nn.Conv2d(in_channels = in_dim, out_channels = in_dim // self.attn_dim, kernel_size=1)
@@ -57,7 +59,7 @@ class VisualAttention(nn.Module):
     m_batchsize, C, width, height = sketches.size()
     proj_query = self.query_conv(sketches).view(m_batchsize, -1, width * height).permute(0, 2, 1) # B X CX(N)
     proj_key = self.key_conv(exemplars).view(m_batchsize, -1, width * height) # B X C x (*W*H)
-    energy = torch.bmm(proj_query, proj_key) # transpose check
+    energy = torch.bmm(proj_query, proj_key) * self.scale # transpose check
     attention = self.softmax(energy) # BX (N) X (N) 
     proj_value = self.value_conv(exemplars).view(m_batchsize, -1, width * height) # B X C X N
 
@@ -66,7 +68,7 @@ class VisualAttention(nn.Module):
 
     texture = out.clone()
     
-    out = self.gamma * out + sketches
+    out = out + sketches
     return out, texture, attention
 
 class UNetDecoderBlock(nn.Module):

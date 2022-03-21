@@ -49,3 +49,28 @@ class EMLoss(nn.Module):
 
   def compute_generator_loss(self, generated_scores):
     return -1.0 * generated_scores.mean()
+
+class TextureConsistencyLoss(nn.Module):
+  def __init__(self,
+      device,
+      texture_layer,
+      style_encoder,
+      style_bottleneck) -> None:
+    super().__init__()
+    self.device = device
+    self.texture_layer = texture_layer
+    self.style_encoder = style_encoder
+    self.style_bottleneck = style_bottleneck
+    self.loss = nn.L1Loss()
+
+  def forward(self, texture, sketch, generated_images):
+    style = generated_images
+    for _, layer in enumerate(self.style_encoder):
+      _, style = layer(style)
+
+    for _, layer in enumerate(self.style_bottleneck):
+      style = layer(style)
+
+    _, style, attn_weights = self.texture_layer(sketch, style)
+
+    return self.loss(texture, style)
