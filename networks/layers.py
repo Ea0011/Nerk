@@ -10,11 +10,13 @@ class ConvBlock(nn.Module):
     self.conv2 = nn.Conv2d(out_c, out_c, kernel_size=3, padding=1)
     self.norm_2 = nn.InstanceNorm2d(out_c, affine=True)
     self.relu = nn.LeakyReLU(0.2)
+    self.dropout = nn.Dropout(p=0.1)
 
   def forward(self, inputs):
     x = self.conv1(inputs)
     x = self.norm_1(x)
     x = self.relu(x)
+    x = self.dropout(x)
     x = self.conv2(x)
     x = self.norm_2(x)
     x = self.relu(x)
