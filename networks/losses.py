@@ -61,7 +61,7 @@ class TextureConsistencyLoss(nn.Module):
     self.texture_layer = texture_layer
     self.style_encoder = style_encoder
     self.style_bottleneck = style_bottleneck
-    self.loss = nn.L1Loss()
+    self.loss = nn.MSELoss()
 
   def forward(self, texture, sketch, generated_images):
     style = generated_images

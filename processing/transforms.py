@@ -21,6 +21,7 @@ class RandomSketch():
   
   def __call__(self, image):
     self.params[-2] = np.random.uniform(0.5, 1.6)
+    self.params[1] = np.random.choice([100, 200, 600, 800], 1)[0]
     sketch = xdog(image, *self.params)
 
     return sketch

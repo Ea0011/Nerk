@@ -9,6 +9,7 @@ import pytorch_lightning as pl
 import torchvision
 from collections import OrderedDict
 from kornia.geometry.transform import get_tps_transform, warp_image_tps
+from kornia.losses import TotalVariation
 
 class DiscriminatorModule(nn.Module):
   def __init__(self, discriminator_params):
@@ -144,6 +145,8 @@ class SketchColoringModule(pl.LightningModule):
       texture_layer=self.Generator.texture_transfer,
       style_encoder=self.Generator.style_encoder,
       style_bottleneck=self.Generator.style_bottleneck)
+    self.total_variation_loss = TotalVariation()
+
     self.lab_to_rgb = OutputTransform()
     self.denormalize_lab = DenormalizeLABImage()
     self.denormalize_rgb = DenormalizeRGBImage()
@@ -190,6 +193,8 @@ class SketchColoringModule(pl.LightningModule):
         self.texture_for_loss,
         self.sketch_for_loss,
         self.generated_imgs.clone())
+      total_variation_loss = self.total_variation_loss(self.generated_imgs.clone())
+      total_variation_loss = total_variation_loss.mean()
 
       g_loss = 0
       if self.hparams.train_gan:
@@ -202,15 +207,16 @@ class SketchColoringModule(pl.LightningModule):
         g_loss = self.adversarial_loss(cgan_out, valid)
 
       total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss + \
-        self.hparams.color * color_loss + self.hparams.texture * texture_loss
+        self.hparams.color * color_loss + self.hparams.texture * texture_loss + self.hparams.variation * total_variation_loss
 
       generator_log = {
         "g_loss": g_loss,
         'rec_loss': rec_loss,
-        'prec_loss': perc_loss,
+        'perc_loss': perc_loss,
         'total_loss': total_loss,
         'color_loss': color_loss,
         'texture_loss': texture_loss,
+        'total_variation_loss': total_variation_loss,
       } 
 
       output = OrderedDict({
@@ -270,11 +276,16 @@ class SketchColoringModule(pl.LightningModule):
       valid = valid.type_as(sketches)
       g_loss = self.adversarial_loss(cgan_out, valid)
 
-    rec_loss = self.reconstruction_loss(self.denormalize_lab(generated_images.clone()), 
-      self.denormalize_lab(images_lab.clone()))
+    color_loss = self.color_loss(self.denormalize_lab(generated_images.clone())[:, 1:],
+        self.denormalize_lab(images_lab.clone())[:, 1:])
+    rgb_images = self.lab_to_rgb(generated_images.clone())
+    rec_loss = self.reconstruction_loss(self.denormalize_rgb(rgb_images.clone()),
+        self.denormalize_rgb(images.clone()))
+    total_variation_loss = self.total_variation_loss(rgb_images).mean()
 
     perc_loss = self.perceptual_loss(rgb_images, images) if self.hparams.perc > 0 else 0
-    total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss
+    total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss + \
+      self.hparams.color * color_loss + self.hparams.variation * total_variation_loss
 
     self.log('val_loss', total_loss, prog_bar=True)
 
@@ -352,7 +363,7 @@ class SketchColoringModule(pl.LightningModule):
 
     points_src = torch.stack((xs, ys), 1).unsqueeze(0)
     points_src = torch.repeat_interleave(points_src, images_lab.shape[0], dim=0).type_as(images_lab)
-    points_dst = points_src + torch.rand(images_lab.shape[0], 5, 2).type_as(images_lab) * (-0.6) + 0.3
+    points_dst = points_src + torch.rand(images_lab.shape[0], 5, 2).type_as(images_lab) * (-0.8) + 0.4
     # note that we are getting the reverse transform: dst -> src
     kernel_weights, affine_weights = get_tps_transform(points_dst, points_src)
     exemplars = warp_image_tps(images_lab.clone(), points_src, kernel_weights, affine_weights)
