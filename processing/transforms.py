@@ -20,8 +20,10 @@ class RandomSketch():
     self.params = params
   
   def __call__(self, image):
+    self.params[0] = np.random.choice([0.98, 0.99], 1)[0]
     self.params[-2] = np.random.uniform(0.5, 1.6)
-    self.params[1] = np.random.choice([100, 200, 600, 800], 1)[0]
+    self.params[1] = np.random.choice([200, 400, 600], 1)[0]
+    self.params[-3] = np.random.uniform(1.2, 1.5)
     sketch = xdog(image, *self.params)
 
     return sketch
