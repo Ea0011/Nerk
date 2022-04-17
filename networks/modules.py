@@ -177,9 +177,7 @@ class SketchColoringModule(pl.LightningModule):
       sample_imgs = self.generated_imgs[:6].detach().clone()
       sample_imgs = self.lab_to_rgb(sample_imgs)
       exemplar_imgs = self.lab_to_rgb(exemplars[:6].clone())
-      print(exemplar_imgs.shape, sample_imgs.shape)
       imgs_to_plot = torch.cat([sample_imgs, exemplar_imgs], dim=0)
-      print(exemplar_imgs.shape, imgs_to_plot.shape, sample_imgs.shape)
       grid = torchvision.utils.make_grid(imgs_to_plot)
       self.logger.experiment.add_image("generated_images", grid, self.current_epoch)
 
