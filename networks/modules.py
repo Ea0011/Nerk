@@ -295,6 +295,8 @@ class SketchColoringModule(pl.LightningModule):
     colorizer_lr = self.hparams.colorizer_lr
     b1 = self.hparams.b1
     b2 = self.hparams.b2
+    disc_b1 = self.hparams.disc_b1
+    disc_b2 = self.hparams.disc_b2
     opt_g = torch.optim.AdamW(
       self.Generator.parameters(),
       lr=colorizer_lr,
@@ -314,7 +316,7 @@ class SketchColoringModule(pl.LightningModule):
       opt_d = torch.optim.AdamW(
         self.Discriminator.parameters(),
         lr=discriminator_lr,
-        betas=(b1, b2),
+        betas=(disc_b1, disc_b2),
         weight_decay=self.hparams.weight_decay,)
 
       discriminator_scheduler = {
