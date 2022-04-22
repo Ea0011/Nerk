@@ -13,7 +13,7 @@ class ImageFolderDataset():
               transform=None,
               sketch_params=PARAM_DEFAULT,
               image_size=None,
-              training_sizes = [512, 256, 128],
+              training_sizes=None,
               *args,
               **kwargs):
 
@@ -73,8 +73,8 @@ class ImageFolderDataset():
 
   def __getitem__(self, index):
     image = None
-    if self.image_size is None:
-      size = np.random.choice(self.training_sizes, 1)[0]
+    if self.training_sizes is not None:
+      size = int(np.random.choice(self.training_sizes, 1)[0])
       image = InputTransform(size=size)(self.load_image(self.images[index]))
     else:
       image = InputTransform(size=self.image_size)(self.load_image(self.images[index]))
