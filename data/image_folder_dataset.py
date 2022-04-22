@@ -12,7 +12,8 @@ class ImageFolderDataset():
               ratios=[.8, .1, .1], # train/val/test ratios for data split
               transform=None,
               sketch_params=PARAM_DEFAULT,
-              image_size=512,
+              image_size=None,
+              training_sizes = [512, 256, 128],
               *args,
               **kwargs):
 
@@ -41,6 +42,7 @@ class ImageFolderDataset():
     # transform function that we will apply later for data preprocessing
     self.transform = transform
     self.sketch_transform = RandomSketch(sketch_params)
+    self.training_sizes = training_sizes
 
   @staticmethod
   def make_dataset(directory):
@@ -70,7 +72,13 @@ class ImageFolderDataset():
     return Image.open(image_path)
 
   def __getitem__(self, index):
-    image = InputTransform(size=self.image_size)(self.load_image(self.images[index])) # For perceptual loss
+    image = None
+    if self.image_size is None:
+      size = np.random.choice(self.training_sizes, 1)[0]
+      image = InputTransform(size=size)(self.load_image(self.images[index]))
+    else:
+      image = InputTransform(size=self.image_size)(self.load_image(self.images[index]))
+
     sketch = self.sketch_transform(image) # For condditional GAN
     img_lab = self.rgb_to_lab(image) # For chrominance loss
 
