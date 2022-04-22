@@ -9,7 +9,7 @@ import pytorch_lightning as pl
 import torchvision
 from collections import OrderedDict
 from kornia.geometry.transform import get_tps_transform, warp_image_tps
-from kornia.losses import TotalVariation
+from kornia.losses import TotalVariation, SSIMLoss
 
 class DiscriminatorModule(nn.Module):
   def __init__(self, discriminator_params):
@@ -146,6 +146,7 @@ class SketchColoringModule(pl.LightningModule):
       style_encoder=self.Generator.style_encoder,
       style_bottleneck=self.Generator.style_bottleneck)
     self.total_variation_loss = TotalVariation()
+    self.struct_similarity_loss = SSIMLoss(window_size=5, max_val=1.0) # SSIM index for validation
 
     self.lab_to_rgb = OutputTransform()
     self.denormalize_lab = DenormalizeLABImage()
@@ -278,16 +279,18 @@ class SketchColoringModule(pl.LightningModule):
 
     color_loss = self.color_loss(self.denormalize_lab(generated_images.clone())[:, 1:],
         self.denormalize_lab(images_lab.clone())[:, 1:])
+
     rgb_images = self.lab_to_rgb(generated_images.clone())
+    ssim_loss = self.struct_similarity_loss(rgb_images.clone(), images.clone())
     rec_loss = self.reconstruction_loss(self.denormalize_rgb(rgb_images.clone()),
         self.denormalize_rgb(images.clone()))
-    total_variation_loss = self.total_variation_loss(rgb_images).mean()
 
     perc_loss = self.perceptual_loss(rgb_images, images) if self.hparams.perc > 0 else 0
-    total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss + \
-      self.hparams.color * color_loss + self.hparams.variation * total_variation_loss
+    total_loss = ssim_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss + \
+      self.hparams.color * color_loss
 
     self.log('val_loss', total_loss, prog_bar=True)
+    self.log('val generator loss', g_loss, prog_bar=True)
 
     return total_loss
 
