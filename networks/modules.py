@@ -175,12 +175,13 @@ class SketchColoringModule(pl.LightningModule):
         self(sketches.clone(), exemplars.clone())
 
       # log sampled images
-      sample_imgs = self.generated_imgs[:6].detach().clone()
-      sample_imgs = self.lab_to_rgb(sample_imgs)
-      exemplar_imgs = self.lab_to_rgb(exemplars[:6].clone())
-      imgs_to_plot = torch.cat([sample_imgs, exemplar_imgs], dim=0)
-      grid = torchvision.utils.make_grid(imgs_to_plot)
-      self.logger.experiment.add_image("generated_images", grid, self.current_epoch)
+      if batch_idx % self.trainer.accumulate_grad_batches == 0:
+        sample_imgs = self.generated_imgs[:6].detach().clone()
+        sample_imgs = self.lab_to_rgb(sample_imgs)
+        exemplar_imgs = self.lab_to_rgb(exemplars[:6].clone())
+        imgs_to_plot = torch.cat([sample_imgs, exemplar_imgs], dim=0)
+        grid = torchvision.utils.make_grid(imgs_to_plot)
+        self.logger.experiment.add_image("generated_images", grid, self.global_step)
 
       color_loss = self.color_loss(self.denormalize_lab(self.generated_imgs.clone())[:, 1:],
         self.denormalize_lab(images_lab.clone())[:, 1:])
@@ -188,8 +189,7 @@ class SketchColoringModule(pl.LightningModule):
       rgb_images = self.lab_to_rgb(self.generated_imgs.clone())
 
       perc_loss = self.perceptual_loss(rgb_images, images) if self.hparams.perc > 0 else 0
-      rec_loss = self.reconstruction_loss(self.denormalize_rgb(rgb_images.clone()),
-        self.denormalize_rgb(images.clone()))
+      rec_loss = self.reconstruction_loss(rgb_images.clone(), images.clone())
       texture_loss = self.texture_loss( # May need to detach some parts
         self.texture_for_loss,
         self.sketch_for_loss,
@@ -282,8 +282,7 @@ class SketchColoringModule(pl.LightningModule):
 
     rgb_images = self.lab_to_rgb(generated_images.clone())
     ssim_loss = self.struct_similarity_loss(rgb_images.clone(), images.clone())
-    rec_loss = self.reconstruction_loss(self.denormalize_rgb(rgb_images.clone()),
-        self.denormalize_rgb(images.clone()))
+    rec_loss = self.reconstruction_loss(rgb_images.clone(), images.clone())
 
     perc_loss = self.perceptual_loss(rgb_images, images) if self.hparams.perc > 0 else 0
     total_loss = ssim_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss + \
