@@ -24,7 +24,7 @@ class RandomSketch():
     self.params[-2] = 0.9
     self.params[1] = np.random.choice([400, 800], 1)[0]
     self.params[-3] = np.random.uniform(1.4, 1.6)
-    self.params[-1] = np.random.choice([True, False], 1)[0]
+    self.params[-1] = np.random.choice([True, False], 1, p=[0.7, 0.3])[0]
     sketch = xdog(image, *self.params)
 
     return sketch
