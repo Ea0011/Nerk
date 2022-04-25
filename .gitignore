@@ -6,3 +6,7 @@ models/
 **/.DS_Store
 joj/
 figures/
+processing/face_extract.py
+processing/lbpcascade_*
+processing/test.png
+portraits.zip
