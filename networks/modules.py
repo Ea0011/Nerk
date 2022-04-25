@@ -36,7 +36,7 @@ class TextureTransfer(nn.Module):
   def __init__(self, attn_dim, in_dim=512) -> None:
     super().__init__()
     self.attention = VisualAttention(in_dim=in_dim, attn_dim=attn_dim)
-    self.normalization = nn.InstanceNorm2d(in_dim, affine=True)
+    self.normalization = nn.InstanceNorm2d(in_dim, affine=False)
 
   def forward(self, sketch, exemplar):
     texture_transfer, texture, attn_output_weights = self.attention(sketch, exemplar)
@@ -72,7 +72,7 @@ class SketchColorizer(nn.Module):
     sketch_for_loss = sketch.clone()
 
     # Compute attention to transfer texture from exemplar to sketch
-    sketch, texture, attn_out_weights = self.texture_transfer(sketch, exemplars) # TODO: Visualize attention layer
+    sketch, texture, attn_out_weights = self.texture_transfer(sketch, exemplars)
     texture_for_loss = texture.clone()
 
     for i, layer in enumerate(self.colorizer_decoder):
@@ -135,8 +135,8 @@ class SketchColoringModule(pl.LightningModule):
     self.Discriminator = DiscriminatorModule(self.hparams.discriminator_params)
 
     # Initialiaze colored sketch generator
-    self.color_loss = nn.SmoothL1Loss()
-    self.reconstruction_loss = nn.SmoothL1Loss()
+    self.color_loss = nn.SmoothL1Loss(beta=self.hparams.l1_beta)
+    self.reconstruction_loss = nn.SmoothL1Loss(beta=self.hparams.l1_beta)
     self.adversarial_loss = nn.BCEWithLogitsLoss() if self.hparams.gan_loss == 'BCE' else nn.MSELoss()
     self.discirminator_loss = nn.BCEWithLogitsLoss() if self.hparams.gan_loss == 'BCE' else nn.MSELoss()
     self.perceptual_loss = PerceptualLossVgg(device=device, layer=self.hparams.perceptual_layer)
@@ -183,8 +183,7 @@ class SketchColoringModule(pl.LightningModule):
         grid = torchvision.utils.make_grid(imgs_to_plot)
         self.logger.experiment.add_image("generated_images", grid, self.global_step)
 
-      color_loss = self.color_loss(self.denormalize_lab(self.generated_imgs.clone())[:, 1:],
-        self.denormalize_lab(images_lab.clone())[:, 1:])
+      color_loss = self.color_loss(self.generated_imgs.clone(), images_lab.clone())
 
       rgb_images = self.lab_to_rgb(self.generated_imgs.clone())
 
@@ -277,8 +276,7 @@ class SketchColoringModule(pl.LightningModule):
       valid = valid.type_as(sketches)
       g_loss = self.adversarial_loss(cgan_out, valid)
 
-    color_loss = self.color_loss(self.denormalize_lab(generated_images.clone())[:, 1:],
-        self.denormalize_lab(images_lab.clone())[:, 1:])
+    color_loss = self.color_loss(generated_images.clone(), images_lab.clone())
 
     rgb_images = self.lab_to_rgb(generated_images.clone())
     ssim_loss = self.struct_similarity_loss(rgb_images.clone(), images.clone())

@@ -12,8 +12,8 @@ def construct_unet(params):
   output_layers = []
 
   if "decoder_blocks" not in params:
-    for enc_dims in params["encoder_blocks"]:
-      encoder = UNetEncoderBlock(enc_dims['in_c'], enc_dims['out_c'])
+    for enc_params in params["encoder_blocks"]:
+      encoder = UNetEncoderBlock(enc_params['in_c'], enc_params['out_c'])
       enc_layers.append(encoder)
     
     bottle_neck = ConvBlock(params["encoder_blocks"][-1]['out_c'], 2 * params["encoder_blocks"][-1]['out_c'])
@@ -25,13 +25,18 @@ def construct_unet(params):
     return encoder, bottle_neck
 
   encoder_blocks, decoder_blocks = params["encoder_blocks"], params["decoder_blocks"]
-  for enc_dims, dec_dims in zip(encoder_blocks, decoder_blocks):
-    encoder = UNetEncoderBlock(enc_dims['in_c'], enc_dims['out_c'])
-    decoder = UNetDecoderBlock(dec_dims['in_c'], dec_dims['out_c'])
+  for enc_params, dec_params in zip(encoder_blocks, decoder_blocks):
+    encoder = UNetEncoderBlock(**enc_params)
+    decoder = UNetDecoderBlock(**dec_params)
     enc_layers.append(encoder)
     dec_layers.append(decoder)
 
-  bottle_neck = ConvBlock(encoder_blocks[-1]['out_c'], 2 * encoder_blocks[-1]['out_c'])
+  bottle_neck = ConvBlock(
+    encoder_blocks[-1]['out_c'],
+    2 * encoder_blocks[-1]['out_c'],
+    encoder_blocks[-1]['affine'],
+    encoder_blocks[-1]['normalize'],
+    encoder_blocks[-1]['p'])
   bottle_neck_layers.append(bottle_neck)
 
   output = nn.Conv2d(decoder_blocks[-1]['out_c'], 3, kernel_size=1)

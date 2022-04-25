@@ -3,28 +3,29 @@ from torch import nn
 import numpy as np
 
 class ConvBlock(nn.Module):
-  def __init__(self, in_c, out_c):
+  def __init__(self, in_c, out_c, affine=False, normalize=True, p=0):
     super().__init__()
     self.conv1 = nn.Conv2d(in_c, out_c, kernel_size=3, padding=1)
-    self.norm_1 = nn.InstanceNorm2d(out_c, affine=True)
+    self.norm_1 = nn.InstanceNorm2d(out_c, affine=affine)
     self.conv2 = nn.Conv2d(out_c, out_c, kernel_size=3, padding=1)
-    self.norm_2 = nn.InstanceNorm2d(out_c, affine=True)
-    self.relu = nn.LeakyReLU(0.2)
-    self.dropout = nn.Dropout(p=0)
+    self.norm_2 = nn.InstanceNorm2d(out_c, affine=affine)
+    self.relu = nn.LeakyReLU(0.2, inplace=True)
+    self.dropout = nn.Dropout(p=p)
+    self.normalize = normalize
 
   def forward(self, inputs):
     x = self.conv1(inputs)
-    x = self.norm_1(x)
+    x = self.norm_1(x) if self.normalize else x
     x = self.relu(x)
     x = self.dropout(x)
     x = self.conv2(x)
-    x = self.norm_2(x)
+    x = self.norm_2(x) if self.normalize else x
     x = self.relu(x)
 
     return x
 
 class UNetEncoderBlock(nn.Module):
-  def __init__(self, in_c, out_c):
+  def __init__(self, in_c, out_c, affine=False, normalize=True, p=0):
     super().__init__()
     self.conv = ConvBlock(in_c, out_c)
     self.pool = nn.AvgPool2d((2, 2))
@@ -74,13 +75,14 @@ class VisualAttention(nn.Module):
     return out, texture, attention
 
 class UNetDecoderBlock(nn.Module):
-  def __init__(self, in_c, out_c):
+  def __init__(self, in_c, out_c, affine=False, normalize=True, p=0):
     super().__init__()
     self.up = nn.ConvTranspose2d(in_c, out_c, kernel_size=2, stride=2, padding=0)
     self.interpolate = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False)
-    self.conv = ConvBlock(2 * out_c, out_c)
+    self.conv = ConvBlock(2 * out_c, out_c, affine, normalize, p)
     self.conv_1 = nn.Conv2d(in_c, out_c, kernel_size=1)
-    self.norm = nn.InstanceNorm2d(out_c, affine=True)
+    self.norm = nn.InstanceNorm2d(out_c, affine=affine)
+    self.normalize = normalize
 
   def forward(self, inputs, skip, texture):
     x = self.up(inputs)
@@ -88,7 +90,7 @@ class UNetDecoderBlock(nn.Module):
     texture = self.interpolate(texture)
     texture = self.conv_1(texture)
     x = x + texture
-    x = self.norm(x)
+    x = self.norm(x) if self.normalize else x
 
     x = torch.cat([x, skip], axis=1)
     x = self.conv(x)
