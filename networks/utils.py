@@ -13,10 +13,20 @@ def construct_unet(params):
 
   if "decoder_blocks" not in params:
     for enc_params in params["encoder_blocks"]:
-      encoder = UNetEncoderBlock(enc_params['in_c'], enc_params['out_c'])
+      encoder = UNetEncoderBlock(
+        enc_params['in_c'],
+        enc_params['out_c'],
+        enc_params['affine'],
+        enc_params['normalize'],
+        enc_params['p'])
       enc_layers.append(encoder)
     
-    bottle_neck = ConvBlock(params["encoder_blocks"][-1]['out_c'], 2 * params["encoder_blocks"][-1]['out_c'])
+    bottle_neck = ConvBlock(
+      params["encoder_blocks"][-1]['out_c'],
+      2 * params["encoder_blocks"][-1]['out_c'],
+      params["encoder_blocks"][-1]['affine'],
+      params["encoder_blocks"][-1]['normalize'],
+      params["encoder_blocks"][-1]['p'])
     bottle_neck_layers.append(bottle_neck)
 
     encoder = nn.ModuleList(enc_layers)

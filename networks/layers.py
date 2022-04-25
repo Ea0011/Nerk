@@ -27,7 +27,7 @@ class ConvBlock(nn.Module):
 class UNetEncoderBlock(nn.Module):
   def __init__(self, in_c, out_c, affine=False, normalize=True, p=0):
     super().__init__()
-    self.conv = ConvBlock(in_c, out_c)
+    self.conv = ConvBlock(in_c, out_c, affine=affine, normalize=normalize, p=p)
     self.pool = nn.AvgPool2d((2, 2))
 
   def forward(self, inputs):
