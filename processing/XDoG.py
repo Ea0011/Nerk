@@ -1,6 +1,5 @@
 import numpy as np
-import numpy as np
-from skimage.filters import threshold_otsu
+from skimage.filters import threshold_yen
 import torchvision.transforms as T
 import torch
 
@@ -17,8 +16,8 @@ def xdog(im, gamma=0.98, phi=200, eps=-0.1, k=1.6, sigma=0.8, binarize=True):
   imdiff -= imdiff.min()
   imdiff /= imdiff.max()
   if binarize:
-    mu = imdiff.mean()
-    imdiff = torch.where(imdiff > mu, 1.0, 0.0)
+    t = threshold_yen(imdiff.squeeze(0).numpy())
+    imdiff = torch.where(imdiff > t, 1.0, 0.0)
 
   return imdiff
 
