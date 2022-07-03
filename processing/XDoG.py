@@ -6,6 +6,7 @@ import torch
 
 hatch_transform = T.Compose([
   T.PILToTensor(),
+  T.Grayscale(),
   T.ConvertImageDtype(torch.float),
 ])
 
