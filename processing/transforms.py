@@ -1,8 +1,9 @@
-from processing.XDoG import xdog, PARAM_DEFAULT
+from processing.XDoG import hatch, xdog, PARAM_DEFAULT
 import numpy as np
 from torchvision import transforms
 import torch
 from kornia.color import LabToRgb
+import os
 class Sketch():
   def __init__(self, params = PARAM_DEFAULT):
     self.params = params
@@ -16,12 +17,30 @@ r'''
 An XDog filter with random Gaussian standard deviation
 '''
 class RandomSketch():
-  def __init__(self, params = PARAM_DEFAULT):
+  def __init__(self, params=PARAM_DEFAULT, hatch_dir="./textures"):
     self.params = params
+    self.hatch_patterns = []
+
+    for root, _, fnames in sorted(os.walk(hatch_dir)):
+      for fname in sorted(fnames):
+        path = os.path.join(root, fname)
+        ext = os.path.splitext(path)[-1].lower()
+
+        if ext in ['.png', '.jpg', '.jpeg']:
+          path = os.path.join(root, fname)
+          self.hatch_patterns.append(path)
   
   def __call__(self, image):
+    do_hatch = np.random.choice([True, False], 1, p=[0.5, 0.5])[0]
+    
+    if do_hatch:
+      texture_path = np.random.choice(self.hatch_patterns, 1)[0]
+      sketch = hatch(image, texture_path=texture_path)
+
+      return sketch
+
     self.params[0] = 0.98
-    self.params[-2] = np.random.uniform(0.8, 2)
+    self.params[-2] = np.random.uniform(0.8, 1.2)
     self.params[1] = np.random.choice([400, 800], 1)[0]
     self.params[-3] = np.random.uniform(1.4, 1.6)
     self.params[-1] = np.random.choice([True, False], 1, p=[0.7, 0.3])[0]

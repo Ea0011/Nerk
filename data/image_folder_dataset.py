@@ -14,6 +14,8 @@ class ImageFolderDataset():
               sketch_params=PARAM_DEFAULT,
               image_size=None,
               training_sizes=None,
+              continuation_ratio=None,
+              hatch_pattern_path="../processing/textures/",
               *args,
               **kwargs):
 
@@ -24,7 +26,7 @@ class ImageFolderDataset():
     self.rgb_to_lab = RgbToLab()
 
     # For deterministic sampling
-    r = np.random.RandomState(1234)
+    r = np.random.RandomState(432)
     r.shuffle(self.images)
 
     train, val, test = np.split(self.images, 
@@ -34,6 +36,15 @@ class ImageFolderDataset():
 
     if mode == 'train':
       self.images = train
+      if continuation_ratio:
+        # Circle the list to start with samples not used
+        assert(continuation_ratio < 1)
+
+        non_used_portion = len(self.images) * continuation_ratio
+        non_used_images = self.images[non_used_portion:]
+        used_images = self.images[:non_used_portion]
+
+        self.images = non_used_images + used_images
     elif mode == 'val':
       self.images = val
     elif mode == 'test':
@@ -41,7 +52,7 @@ class ImageFolderDataset():
 
     # transform function that we will apply later for data preprocessing
     self.transform = transform
-    self.sketch_transform = RandomSketch(sketch_params)
+    self.sketch_transform = RandomSketch(sketch_params, hatch_dir=hatch_pattern_path)
     self.training_sizes = training_sizes
 
   @staticmethod
