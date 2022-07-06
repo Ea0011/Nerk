@@ -17,9 +17,10 @@ r'''
 An XDog filter with random Gaussian standard deviation
 '''
 class RandomSketch():
-  def __init__(self, params=PARAM_DEFAULT, hatch_dir="./textures"):
+  def __init__(self, params=PARAM_DEFAULT, hatch_dir="./textures", hatch_enabled=True):
     self.params = params
     self.hatch_patterns = []
+    self.hatch_enabled = hatch_enabled
 
     for root, _, fnames in sorted(os.walk(hatch_dir)):
       for fname in sorted(fnames):
@@ -33,7 +34,7 @@ class RandomSketch():
   def __call__(self, image):
     do_hatch = np.random.choice([True, False], 1, p=[0.5, 0.5])[0]
     
-    if do_hatch:
+    if do_hatch and self.hatch_enabled:
       texture_path = np.random.choice(self.hatch_patterns, 1)[0]
       sketch = hatch(image, texture_path=texture_path)
 
