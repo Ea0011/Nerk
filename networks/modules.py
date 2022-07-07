@@ -122,7 +122,8 @@ class PaintCorrectionModule(pl.LightningModule):
       self.restore_generator_params(state_dict_path)
 
     # Freeze pre trained generator network
-    self.Generator.requires_grad = False
+    for p in self.Generator.parameters():
+      p.requires_grad = False
 
     # Initialiaze colored sketch generator
     self.color_loss = nn.SmoothL1Loss(beta=self.hparams.l1_beta)
@@ -137,7 +138,7 @@ class PaintCorrectionModule(pl.LightningModule):
 
   def restore_generator_params(self, state_dict_path):
     state = torch.load(state_dict_path)
-    self.Generator.load_state_dict(state['model_state_dict'])
+    self.Generator.load_state_dict(state)
 
   def weight_init(m):
     if isinstance(m, nn.Conv2d):
@@ -152,7 +153,7 @@ class PaintCorrectionModule(pl.LightningModule):
     colored = self.Corrective(colored)
     return colored
 
-  def training_step(self, batch, batch_idx, optimizer_idx):
+  def training_step(self, batch, batch_idx):
     images, sketches, exemplars, images_lab = self._exemplars_from_transformations(batch) if \
       self.hparams.exemplar_method == "self" else self._exemplars_from_batch(batch)
 
@@ -197,12 +198,12 @@ class PaintCorrectionModule(pl.LightningModule):
     return color_loss
 
   def configure_optimizers(self):
-    colorizer_lr = self.hparams.colorizer_lr
+    lr = self.hparams.lr
     b1 = self.hparams.b1
     b2 = self.hparams.b2
     opt = torch.optim.AdamW(
-      self.Generator.parameters(),
-      lr=colorizer_lr,
+      self.Corrective.parameters(),
+      lr=lr,
       betas=(b1, b2),
       weight_decay=self.hparams.weight_decay,)
 
