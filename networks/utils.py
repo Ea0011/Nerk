@@ -11,6 +11,11 @@ def construct_unet(params):
   dec_layers = []
   output_layers = []
 
+  if "activation" not in params:
+    activation = "tanh"
+  else:
+    activation = params["activation"]
+
   if "decoder_blocks" not in params:
     for enc_params in params["encoder_blocks"]:
       encoder = UNetEncoderBlock(
@@ -50,7 +55,7 @@ def construct_unet(params):
   bottle_neck_layers.append(bottle_neck)
 
   output = nn.Conv2d(decoder_blocks[-1]['out_c'], 3, kernel_size=1)
-  act = nn.Tanh()
+  act = nn.Tanh() if activation == "tanh" else nn.Sigmoid()
 
   output_layers.append(output)
   output_layers.append(act)

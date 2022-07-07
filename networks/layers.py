@@ -84,13 +84,14 @@ class UNetDecoderBlock(nn.Module):
     self.norm = nn.InstanceNorm2d(out_c, affine=affine)
     self.normalize = normalize
 
-  def forward(self, inputs, skip, texture):
+  def forward(self, inputs, skip, texture=None):
     x = self.up(inputs)
 
-    texture = self.interpolate(texture)
-    texture = self.conv_1(texture)
-    x = x + texture
-    x = self.norm(x) if self.normalize else x
+    if texture is not None:
+      texture = self.interpolate(texture)
+      texture = self.conv_1(texture)
+      x = x + texture
+      x = self.norm(x) if self.normalize else x
 
     x = torch.cat([x, skip], axis=1)
     x = self.conv(x)
