@@ -16,7 +16,7 @@ class PerceptualLossVgg(nn.Module):
     self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
 
-    for i, _ in enumerate(self.vgg):
+    for i, l in enumerate(self.vgg):
       if i in self.layer:
         self.fhooks.append(self.vgg[i].register_forward_hook(self._extract_feature_forward_hook(i)))
 
@@ -28,14 +28,14 @@ class PerceptualLossVgg(nn.Module):
     self.vgg(input)
     input_feat_map = torch.cat(tuple(self.layer_out.values()))
     self.vgg(target)
-    target_feat_map = torch.cat(tuple(self.layer_out.values()))
+    target_feat_map = torch.cat(tuple(self.layer_out.values())).detach()
 
     return F.l1_loss(input_feat_map, target_feat_map)
 
 
   def _extract_feature_forward_hook(self, layer_name):
     def hook(module, input, output):
-      self.layer_out[layer_name] = output
+      self.layer_out[layer_name] = output.view(-1)
 
     return hook
 
