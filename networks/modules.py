@@ -170,16 +170,22 @@ class PaintCorrectionModule(pl.LightningModule):
       grid = torchvision.utils.make_grid(imgs_to_plot)
       self.logger.experiment.add_image("generated_images", grid, self.global_step)
 
+    perc_loss = self.perceptual_loss(self.generated_imgs.clone(), images.clone())
     color_loss = self.color_loss(self.generated_imgs, images)
+    total_loss = color_loss + 0.001 * perc_loss
 
     log = {
-      "loss": color_loss
+      "color_loss": color_loss,
+      "perceptual_loss": perc_loss,
+      "loss": total_loss,
     } 
 
     output = OrderedDict({
-      "loss": color_loss,
+      "color_loss": color_loss,
+      "perceptual_loss": perc_loss,
+      "loss": total_loss,
     })
-    self.log('train_loss', color_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+    self.log('train_loss', total_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
     self.log_dict(log, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
     return output
@@ -190,6 +196,7 @@ class PaintCorrectionModule(pl.LightningModule):
 
     generated_images, *rest = self.Generator(sketches.clone(), exemplars.clone())
     rgb_images = self.lab_to_rgb(generated_images.clone())
+    rgb_images = self.Corrective(rgb_images)
 
     color_loss = self.color_loss(rgb_images, images)
 
