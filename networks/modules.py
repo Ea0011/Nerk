@@ -170,9 +170,9 @@ class PaintCorrectionModule(pl.LightningModule):
       grid = torchvision.utils.make_grid(imgs_to_plot)
       self.logger.experiment.add_image("generated_images", grid, self.global_step)
 
-    perc_loss = self.perceptual_loss(self.generated_imgs.clone(), images.clone())
+    perc_loss = self.perceptual_loss(self.generated_imgs.clone(), images.clone()) if self.perc > 0 else 0
     color_loss = self.color_loss(self.generated_imgs, images)
-    total_loss = color_loss + 0.001 * perc_loss
+    total_loss = color_loss + self.hparams.perc * perc_loss
 
     log = {
       "color_loss": color_loss,
