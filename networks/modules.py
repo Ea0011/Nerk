@@ -150,6 +150,7 @@ class PaintCorrectionModule(pl.LightningModule):
 
   def forward(self, sketches, exemplars):
     colored, *rest = self.Generator(sketches, exemplars)
+    colored = self.lab_to_rgb(colored)
     colored = self.Corrective(colored)
     return colored
 
@@ -170,7 +171,7 @@ class PaintCorrectionModule(pl.LightningModule):
       grid = torchvision.utils.make_grid(imgs_to_plot)
       self.logger.experiment.add_image("generated_images", grid, self.global_step)
 
-    perc_loss = self.perceptual_loss(self.generated_imgs.clone(), images.clone()) if self.perc > 0 else 0
+    perc_loss = self.perceptual_loss(self.generated_imgs.clone(), images.clone()) if self.hparams.perc > 0 else 0
     color_loss = self.color_loss(self.generated_imgs, images)
     total_loss = color_loss + self.hparams.perc * perc_loss
 
@@ -195,10 +196,10 @@ class PaintCorrectionModule(pl.LightningModule):
       self.hparams.exemplar_method == "self" else self._exemplars_from_batch(batch)
 
     generated_images, *rest = self.Generator(sketches.clone(), exemplars.clone())
-    rgb_images = self.lab_to_rgb(generated_images.clone())
-    rgb_images = self.Corrective(rgb_images)
+    generated_images = self.lab_to_rgb(generated_images)
+    generated_images = self.Corrective(generated_images)
 
-    color_loss = self.color_loss(rgb_images, images)
+    color_loss = self.color_loss(generated_images, images)
 
     self.log('val_loss', color_loss, prog_bar=True)
 
