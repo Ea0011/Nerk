@@ -349,18 +349,15 @@ class SketchColoringModule(pl.LightningModule):
       # log sampled images
       if self.global_step % 32 == 0:
         sample_imgs = self.generated_imgs[:6].detach().clone()
-        sample_imgs = self.lab_to_rgb(sample_imgs)
-        exemplar_imgs = self.lab_to_rgb(exemplars[:6].clone())
+        sample_imgs = torch.clamp(sample_imgs, 0, 1)
+        exemplar_imgs = exemplars[:6].clone()
         imgs_to_plot = torch.cat([sample_imgs, exemplar_imgs], dim=0)
         grid = torchvision.utils.make_grid(imgs_to_plot)
         self.logger.experiment.add_image("generated_images", grid, self.global_step)
 
-      color_loss = self.color_loss(self.generated_imgs.clone(), images_lab.clone())
+      color_loss = self.color_loss(self.generated_imgs.clone(), images.clone())
 
-      rgb_images = self.lab_to_rgb(self.generated_imgs.clone())
-
-      perc_loss = self.perceptual_loss(rgb_images, images) if self.hparams.perc > 0 else 0
-      rec_loss = self.reconstruction_loss(rgb_images.clone(), images.clone())
+      perc_loss = self.perceptual_loss(self.generated_imgs.clone(), images) if self.hparams.perc > 0 else 0
       texture_loss = self.texture_loss( # May need to detach some parts
         self.texture_for_loss,
         self.sketch_for_loss,
@@ -371,19 +368,18 @@ class SketchColoringModule(pl.LightningModule):
       g_loss = 0
       if self.hparams.train_gan:
         # adversarial loss is binary cross-entropy
-        cgan_input = torch.cat([sketches.clone(), rgb_images.clone(), self.generated_imgs.clone()], axis=1)
+        cgan_input = torch.cat([sketches.clone(), self.generated_imgs.clone()], axis=1)
         cgan_out = self.Discriminator(cgan_input)
         valid = torch.ones_like(cgan_out)
         valid = valid.type_as(sketches)
 
         g_loss = self.adversarial_loss(cgan_out, valid)
 
-      total_loss = self.hparams.g * g_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss + \
+      total_loss = self.hparams.g * g_loss + self.hparams.perc * perc_loss + \
         self.hparams.color * color_loss + self.hparams.texture * texture_loss + self.hparams.variation * total_variation_loss
 
       generator_log = {
         "g_loss": g_loss,
-        'rec_loss': rec_loss,
         'perc_loss': perc_loss,
         'total_loss': total_loss,
         'color_loss': color_loss,
@@ -393,8 +389,8 @@ class SketchColoringModule(pl.LightningModule):
 
       output = OrderedDict({
         "loss": total_loss,
+        'color_loss': color_loss,
         "perceptual_loss": perc_loss,
-        "reconstruction_loss": rec_loss,
         "progress_bar": generator_log, 
         "log": generator_log,
       })
@@ -410,7 +406,7 @@ class SketchColoringModule(pl.LightningModule):
         pass
       # Measure discriminator's ability to classify real from generated samples
       # how well can it label as real?
-      cgan_input = torch.cat([sketches.clone(), images.clone(), images_lab.clone()], axis=1)
+      cgan_input = torch.cat([sketches.clone(), images.clone()], axis=1)
       cgan_out = self.Discriminator(cgan_input)
       valid = torch.ones_like(cgan_out)
       valid = valid.type_as(sketches)
@@ -418,9 +414,8 @@ class SketchColoringModule(pl.LightningModule):
 
       # how well can it label as fake?
       self.generated_imgs, *rest = self(sketches.clone(), exemplars.clone())
-      rgb_images = self.lab_to_rgb(self.generated_imgs.detach().clone())
 
-      cgan_input = torch.cat([sketches.clone(), rgb_images.clone(), self.generated_imgs.clone()], axis=1)
+      cgan_input = torch.cat([sketches.clone(), self.generated_imgs.clone()], axis=1)
       cgan_out = self.Discriminator(cgan_input)
       fake = torch.zeros_like(cgan_out)
       fake = fake.type_as(images)
@@ -434,32 +429,44 @@ class SketchColoringModule(pl.LightningModule):
       return output
 
   def validation_step(self, batch, batch_idx):
-    images, sketches, exemplars, images_lab = self._exemplars_from_transformations(batch) if \
-      self.hparams.exemplar_method == "self" else self._exemplars_from_batch(batch)
+    images, sketches, exemplars, images_lab = self._exemplars_from_batch(batch)
 
     generated_images, *rest = self(sketches.clone(), exemplars.clone())
-    rgb_images = self.lab_to_rgb(generated_images.clone())
 
     g_loss = 0
     if self.hparams.train_gan:
-      cgan_input = torch.cat([sketches.clone(), rgb_images.clone(), generated_images.clone()], axis=1)
+      cgan_input = torch.cat([sketches.clone(), generated_images.clone()], axis=1)
       cgan_out = self.Discriminator(cgan_input)
       valid = torch.ones_like(cgan_out)
       valid = valid.type_as(sketches)
       g_loss = self.adversarial_loss(cgan_out, valid)
 
-    color_loss = self.color_loss(generated_images.clone(), images_lab.clone())
+    color_loss = self.color_loss(generated_images.clone(), images.clone())
 
-    rgb_images = self.lab_to_rgb(generated_images.clone())
-    ssim_loss = self.struct_similarity_loss(rgb_images.clone(), images.clone())
-    rec_loss = self.reconstruction_loss(rgb_images.clone(), images.clone())
+    # View results of validation
+    sample_imgs = generated_images[:6].detach().clone()
+    sample_imgs = torch.clamp(sample_imgs, 0, 1)
+    exemplar_imgs = exemplars[:6]
+    imgs_to_plot = torch.cat([sample_imgs, exemplar_imgs], dim=0)
+    grid = torchvision.utils.make_grid(imgs_to_plot)
+    self.logger.experiment.add_image("val_generated_images", grid, self.global_step)
 
-    perc_loss = self.perceptual_loss(rgb_images, images) if self.hparams.perc > 0 else 0
-    total_loss = ssim_loss + self.hparams.rec * rec_loss + self.hparams.perc * perc_loss + \
+    ssim_loss = self.struct_similarity_loss(generated_images.clone(), images.clone())
+
+    perc_loss = self.perceptual_loss(generated_images, images) if self.hparams.perc > 0 else 0
+    total_loss = ssim_loss + self.hparams.perc * perc_loss + \
       self.hparams.color * color_loss
 
+    val_log = {
+      "val_g_loss": g_loss,
+      'val_perc_loss': perc_loss,
+      'val_total_loss': total_loss,
+      'val_color_loss': color_loss,
+      'val_ssim_loss': ssim_loss,
+    } 
+
     self.log('val_loss', total_loss, prog_bar=True)
-    self.log('val generator loss', g_loss, prog_bar=True)
+    self.log_dict(val_log, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
     return total_loss
 
@@ -520,27 +527,27 @@ class SketchColoringModule(pl.LightningModule):
   def _exemplars_from_batch(self, batch):
     images, sketches, images_lab = batch
     images = torch.repeat_interleave(images, self.hparams.num_exemplars, dim=0)
-    images_lab = torch.repeat_interleave(images_lab, self.hparams.num_exemplars, dim=0)
+    images_exemp = torch.repeat_interleave(images, self.hparams.num_exemplars, dim=0)
     sketches = torch.repeat_interleave(sketches, self.hparams.num_exemplars, dim=0)
     perm = torch.randperm(images.shape[0])
-    exemplars = images_lab[perm,].clone() # retain only color information for exemplars
+    exemplars = images_exemp[perm,].clone() # retain only color information for exemplars
 
-    return (images, sketches, exemplars, images_lab)
+    return (images, sketches, exemplars, images_exemp)
 
   def _exemplars_from_transformations(self, batch):
     images, sketches, images_lab = batch
     images = torch.repeat_interleave(images, self.hparams.num_exemplars, dim=0)
-    images_lab = torch.repeat_interleave(images_lab, self.hparams.num_exemplars, dim=0)
+    images_exemp = torch.repeat_interleave(images, self.hparams.num_exemplars, dim=0)
     sketches = torch.repeat_interleave(sketches, self.hparams.num_exemplars, dim=0)
 
     xs = torch.tensor([-1.0, 1, 0, -1, 1])
     ys = torch.tensor([-1.0, -1, 0, 1, 1])
 
     points_src = torch.stack((xs, ys), 1).unsqueeze(0)
-    points_src = torch.repeat_interleave(points_src, images_lab.shape[0], dim=0).type_as(images_lab)
-    points_dst = points_src + torch.rand(images_lab.shape[0], 5, 2).type_as(images_lab) * (-0.8) + 0.4
+    points_src = torch.repeat_interleave(points_src, images_exemp.shape[0], dim=0).type_as(images_exemp)
+    points_dst = points_src + torch.rand(images_exemp.shape[0], 5, 2).type_as(images_exemp) * (-0.8) + 0.4
     # note that we are getting the reverse transform: dst -> src
     kernel_weights, affine_weights = get_tps_transform(points_dst, points_src)
-    exemplars = warp_image_tps(images_lab.clone(), points_src, kernel_weights, affine_weights)
+    exemplars = warp_image_tps(images_exemp.clone(), points_src, kernel_weights, affine_weights)
 
-    return (images, sketches, exemplars, images_lab)
+    return (images, sketches, exemplars, images_exemp)

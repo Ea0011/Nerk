@@ -60,7 +60,7 @@ def construct_unet(params):
     encoder_blocks[-1]['p'])
   bottle_neck_layers.append(bottle_neck)
 
-  output = nn.Conv2d(decoder_blocks[-1]['out_c'], 3, kernel_size=1)
+  output = nn.Conv2d(decoder_blocks[-1]['out_c'], 3, kernel_size=3, padding=1)
   act = None
   if activation_map[activation] is not None:
     act = activation_map[activation]()

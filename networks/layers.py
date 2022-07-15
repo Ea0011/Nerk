@@ -54,7 +54,7 @@ class VisualAttention(nn.Module):
   def forward(self, sketches, exemplars):
     """
     inputs :
-      x : input feature maps( B X C X W X H)
+      x : input feature maps( B X C X W X H )
     returns :
       out : self attention value + input feature 
       attention: B X N X N (N is Width*Height)
@@ -78,18 +78,20 @@ class UNetDecoderBlock(nn.Module):
   def __init__(self, in_c, out_c, affine=False, normalize=True, p=0):
     super().__init__()
     self.up = nn.ConvTranspose2d(in_c, out_c, kernel_size=2, stride=2, padding=0)
-    self.interpolate = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False)
+    self.up_act = nn.LeakyReLU(0.2, inplace=True)
+    self.interpolate = nn.ConvTranspose2d(in_c, out_c, kernel_size=2, stride=2, padding=0)
+    self.interpolate_act = nn.LeakyReLU(0.2, inplace=True)
     self.conv = ConvBlock(2 * out_c, out_c, affine, normalize, p)
-    self.conv_1 = nn.Conv2d(in_c, out_c, kernel_size=1)
     self.norm = nn.InstanceNorm2d(out_c, affine=affine)
     self.normalize = normalize
 
   def forward(self, inputs, skip, texture=None):
     x = self.up(inputs)
+    x = self.up_act(x)
 
     if texture is not None:
       texture = self.interpolate(texture)
-      texture = self.conv_1(texture)
+      texture = self.interpolate_act(texture)
       x = x + texture
       x = self.norm(x) if self.normalize else x
 
