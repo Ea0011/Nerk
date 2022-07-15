@@ -52,7 +52,7 @@ class RandomSketch():
 class InputTransform():
   def __init__(self, size) -> None:
     self.transform = transforms.Compose([
-      transforms.Resize(size),
+      transforms.Resize(size, transforms.InterpolationMode.BICUBIC),
       transforms.PILToTensor(),
       transforms.ConvertImageDtype(torch.float),
     ])
