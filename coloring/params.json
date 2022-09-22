@@ -1,0 +1,25 @@
+{
+  "colorizer_params": {
+    "encoder_blocks": [
+      {"in_c": 1, "out_c": 32, "normalize": true, "affine": false, "p": 0},
+      {"in_c": 32, "out_c": 64, "normalize": true, "affine": false, "p": 0},
+      {"in_c": 64, "out_c": 128, "normalize": true, "affine": false, "p": 0},
+      {"in_c": 128, "out_c": 256, "normalize": true, "affine": false, "p": 0}
+    ],
+    "decoder_blocks": [
+        {"in_c": 512, "out_c": 256, "normalize": true, "affine": false, "p": 0},
+        {"in_c": 256, "out_c": 128, "normalize": true, "affine": false, "p": 0},
+        {"in_c": 128, "out_c": 64, "normalize": true, "affine": false, "p": 0},
+        {"in_c": 64, "out_c": 32, "normalize": true, "affine": false, "p": 0}
+    ],
+    "activation": "sigmoid"
+  },
+  "style_params": {
+    "encoder_blocks": [
+      {"in_c": 3, "out_c": 32, "normalize": true, "affine": false, "p": 0},
+      {"in_c": 32, "out_c": 64, "normalize": true, "affine": false, "p": 0},
+      {"in_c": 64, "out_c": 128, "normalize": true, "affine": false, "p": 0},
+      {"in_c": 128, "out_c": 256, "normalize": true, "affine": false, "p": 0}
+    ]
+  }
+}

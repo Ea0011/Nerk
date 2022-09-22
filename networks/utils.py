@@ -76,3 +76,17 @@ def construct_unet(params):
   output = nn.ModuleList(output_layers)
 
   return encoder, bottle_neck, decoder, output
+
+
+def add_spectral_norm(layer):
+  if isinstance(layer, torch.nn.Conv2d):
+    layer = torch.nn.utils.parametrizations.spectral_norm(layer)
+  if isinstance(layer, torch.nn.ConvTranspose2d):
+    layer = torch.nn.utils.parametrizations.spectral_norm(layer)
+
+
+def remove_spectral_norm(layer):
+  if isinstance(layer, torch.nn.Conv2d):
+    layer = torch.nn.utils.parametrize.remove_parametrizations(layer, 'weight', leave_parametrized=False)
+  if isinstance(layer, torch.nn.ConvTranspose2d):
+    layer = torch.nn.utils.parametrize.remove_parametrizations(layer, 'weight', leave_parametrized=False)

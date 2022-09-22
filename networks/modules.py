@@ -36,7 +36,7 @@ class TextureTransfer(nn.Module):
   def __init__(self, attn_dim, in_dim=512) -> None:
     super().__init__()
     self.attention = VisualAttention(in_dim=in_dim, attn_dim=attn_dim)
-    self.normalization = nn.InstanceNorm2d(in_dim, affine=False)
+    self.normalization = nn.BatchNorm2d(in_dim)
 
   def forward(self, sketch, exemplar):
     texture_transfer, texture, attn_output_weights = self.attention(sketch, exemplar)
@@ -126,7 +126,7 @@ class PaintCorrectionModule(pl.LightningModule):
       p.requires_grad = False
 
     # Initialiaze colored sketch generator
-    self.color_loss = nn.SmoothL1Loss(beta=self.hparams.l1_beta)
+    self.color_loss = nn.L1Loss()
     self.perceptual_loss = PerceptualLossVgg(device=device, layer=self.hparams.perceptual_layer)
 
     self.lab_to_rgb = OutputTransform()
@@ -307,8 +307,8 @@ class SketchColoringModule(pl.LightningModule):
     self.Discriminator = DiscriminatorModule(self.hparams.discriminator_params)
 
     # Initialiaze colored sketch generator
-    self.color_loss = nn.SmoothL1Loss(beta=self.hparams.l1_beta)
-    self.reconstruction_loss = nn.SmoothL1Loss(beta=self.hparams.l1_beta)
+    self.color_loss = nn.L1Loss()
+    self.reconstruction_loss = nn.L1Loss()
     self.adversarial_loss = nn.BCEWithLogitsLoss() if self.hparams.gan_loss == 'BCE' else nn.MSELoss()
     self.discirminator_loss = nn.BCEWithLogitsLoss() if self.hparams.gan_loss == 'BCE' else nn.MSELoss()
     self.perceptual_loss = PerceptualLossVgg(device=device, layer=self.hparams.perceptual_layer)
@@ -429,9 +429,9 @@ class SketchColoringModule(pl.LightningModule):
       return output
 
   def validation_step(self, batch, batch_idx):
-    images, sketches, exemplars, images_lab = self._exemplars_from_batch(batch)
+    images, sketches, images_lab = batch
 
-    generated_images, *rest = self(sketches.clone(), exemplars.clone())
+    generated_images, *rest = self(sketches.clone(), images.clone())
 
     g_loss = 0
     if self.hparams.train_gan:
@@ -446,7 +446,7 @@ class SketchColoringModule(pl.LightningModule):
     # View results of validation
     sample_imgs = generated_images[:6].detach().clone()
     sample_imgs = torch.clamp(sample_imgs, 0, 1)
-    exemplar_imgs = exemplars[:6]
+    exemplar_imgs = images[:6]
     imgs_to_plot = torch.cat([sample_imgs, exemplar_imgs], dim=0)
     grid = torchvision.utils.make_grid(imgs_to_plot)
     self.logger.experiment.add_image("val_generated_images", grid, self.global_step)
@@ -508,18 +508,7 @@ class SketchColoringModule(pl.LightningModule):
         'interval': 'step',
       }
 
-      return (
-        {
-          'optimizer': opt_g,
-          'lr_scheduler': generator_scheduler,
-          'frequency': self.hparams.generator_frequency,
-        },
-        {
-          'optimizer': opt_d,
-          'lr_scheduler': discriminator_scheduler,
-          'frequency': self.hparams.discriminator_frequency,
-        },
-      )
+      return opt_g, opt_d
 
     return [opt_g], [generator_scheduler]
   

@@ -6,9 +6,9 @@ class ConvBlock(nn.Module):
   def __init__(self, in_c, out_c, affine=False, normalize=True, p=0):
     super().__init__()
     self.conv1 = nn.Conv2d(in_c, out_c, kernel_size=3, padding=1)
-    self.norm_1 = nn.InstanceNorm2d(out_c, affine=affine)
+    self.norm_1 = nn.BatchNorm2d(out_c)
     self.conv2 = nn.Conv2d(out_c, out_c, kernel_size=3, padding=1)
-    self.norm_2 = nn.InstanceNorm2d(out_c, affine=affine)
+    self.norm_2 = nn.BatchNorm2d(out_c)
     self.relu = nn.LeakyReLU(0.2, inplace=True)
     self.dropout = nn.Dropout(p=p)
     self.normalize = normalize
@@ -82,7 +82,7 @@ class UNetDecoderBlock(nn.Module):
     self.interpolate = nn.ConvTranspose2d(in_c, out_c, kernel_size=2, stride=2, padding=0)
     self.interpolate_act = nn.LeakyReLU(0.2, inplace=True)
     self.conv = ConvBlock(2 * out_c, out_c, affine, normalize, p)
-    self.norm = nn.InstanceNorm2d(out_c, affine=affine)
+    self.norm = nn.BatchNorm2d(out_c)
     self.normalize = normalize
 
   def forward(self, inputs, skip, texture=None):
