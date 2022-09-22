@@ -11,4 +11,5 @@ portraits.zip
 **/__pycache__/
 *.pyc
 .DS_Store
-samples/
+sketches/
+exemplars/
