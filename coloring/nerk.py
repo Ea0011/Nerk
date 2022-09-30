@@ -7,7 +7,7 @@ import torch
 from torchsummary import summary
 import torchvision.transforms as T
 import torchvision.transforms.functional as F
-
+from skimage import morphology
 import matplotlib.pyplot as plt
 
 class Nerk():
@@ -40,8 +40,12 @@ class Nerk():
     img = InputTransform(size)(image)
     return img
 
-  def sketch(self, image, sketch_params=[0.98, 200, -0.1, 1.6, 0.8, True]):
-    sketch = Sketch(sketch_params)(image[:3, :, :])
+  def sketch(self, image, sketch_params=[0.98, 200, -0.1, 1.6, 0.8, True], remove_artifacts=True, strength=32):
+    sketch = Sketch(params=sketch_params)(image[:3, :, :])
+
+    if remove_artifacts:
+      sketch = morphology.remove_small_holes(sketch.to(bool).numpy(), strength, connectivity=6)
+      sketch = F.to_tensor(sketch[0]).float()
     return sketch
 
   def randomized_sketch(self, image, hatch=False):
@@ -90,11 +94,12 @@ class Nerk():
 
 
 if __name__ == "__main__":
+  size = (512, 512)
   nerk = Nerk(model_path="./models/colorizer-stable.pth", params_path="./coloring/params.json")
-  img = nerk.load_image("./samples/sample1.png")
-  exemplar = nerk.resize(img, (512, 512))
-  sketch = nerk.randomized_sketch(img, hatch=False)
-  sketch = nerk.resize(sketch, (512, 512), Nerk.InterpolationMode.BILINEAR)
+  img = nerk.resize(nerk.load_image("./sketches/sample4.jpg"), size)
+  exemplar = nerk.resize(nerk.load_image("./portraits/18362970.jpg"), size)
+  sketch = nerk.sketch(img, sketch_params=[0.98, 200, -0.1, 1.6, 0.8, True], remove_artifacts=True, strength=32)
+  sketch = nerk.resize(sketch, size, Nerk.InterpolationMode.BILINEAR)
   painting = nerk.paint(sketch, exemplar)
 
   nerk.demonstrate_painting(sketch, exemplar, painting)
